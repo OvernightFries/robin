@@ -1,285 +1,297 @@
 import os
-import asyncio
 import logging
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from typing import Dict, Any, List, Optional
+import pandas as pd
+import numpy as np
 from dotenv import load_dotenv
-import requests
-from alpaca.data.enums import DataFeed
-from typing import Optional, Dict, Any
-
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import (
-    StockBarsRequest,
-    StockTradesRequest,
-    StockQuotesRequest,
-    StockLatestQuoteRequest,
-    OptionChainRequest
-)
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-from alpaca.trading.stream import TradingStream
+import alpaca_trade_api as tradeapi
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class ComprehensiveMarketData:
-    def __init__(self, symbol: str):
-        self.api_key = os.getenv("ALPACA_API_KEY")
-        self.secret_key = os.getenv("ALPACA_SECRET_KEY")
+class MarketData:
+    def __init__(self, symbol: str, api_key: str = None, secret_key: str = None):
         self.symbol = symbol.upper()
-        self.historical_client = StockHistoricalDataClient(
-            api_key=self.api_key,
-            secret_key=self.secret_key
+        self.api_key = api_key or os.getenv("ALPACA_API_KEY")
+        self.secret_key = secret_key or os.getenv("ALPACA_SECRET_KEY")
+        
+        if not self.api_key or not self.secret_key:
+            raise ValueError("Alpaca API key and secret key must be provided")
+            
+        # Initialize REST client for stocks
+        self.api = tradeapi.REST(
+            self.api_key,
+            self.secret_key,
+            base_url='https://paper-api.alpaca.markets'
         )
-        self.stream = TradingStream(self.api_key, self.secret_key)
-        logger.info(f"[INIT] MarketData initialized for {self.symbol}")
-
-    def get_bars(self, days: int = 30, interval: str = "hour"):
-        """Get historical bars for the symbol."""
+        
+    async def get_market_data(self) -> Dict[str, Any]:
+        """Get comprehensive market data."""
         try:
-            now = datetime.now(ZoneInfo("America/New_York"))
-            unit = TimeFrameUnit.Hour if interval == "hour" else TimeFrameUnit.Day
-            req = StockBarsRequest(
-                symbol_or_symbols=self.symbol,
-                timeframe=TimeFrame(amount=1, unit=unit),
-                start=now - timedelta(days=days)
-            )
-            return self.historical_client.get_stock_bars(req).df
+            # Get current market data
+            try:
+                current_trade = self.api.get_latest_trade(self.symbol)
+                current_quote = self.api.get_latest_quote(self.symbol)
+                current_data = {
+                    "price": current_trade.price,
+                    "volume": current_trade.size,
+                    "bid": current_quote.bid_price,  # bid price
+                    "ask": current_quote.ask_price,  # ask price
+                    "bid_size": current_quote.bid_size,  # bid size
+                    "ask_size": current_quote.ask_size,  # ask size
+                    "timestamp": datetime.now().strftime('%Y-%m-%d')
+                }
+            except Exception as e:
+                logger.warning(f"Could not get current market data: {str(e)}")
+                # Get the last close price instead
+                last_bars = self.api.get_bars(self.symbol, timeframe='1D', limit=1).df
+                if not last_bars.empty:
+                    current_data = {
+                        "price": last_bars['close'].iloc[-1],
+                        "volume": last_bars['volume'].iloc[-1],
+                        "bid": last_bars['close'].iloc[-1],
+                        "ask": last_bars['close'].iloc[-1],
+                        "bid_size": 0,
+                        "ask_size": 0,
+                        "timestamp": last_bars.index[-1].strftime('%Y-%m-%d'),
+                        "market_closed": True
+                    }
+                else:
+                    raise ValueError(f"No historical data available for {self.symbol}")
+            
+            # Get historical data with error handling
+            try:
+                # Get data for the last 30 days
+                end_date = datetime.now(ZoneInfo('America/New_York'))
+                start_date = end_date - timedelta(days=30)
+                
+                daily_data = self.api.get_bars(
+                    self.symbol,
+                    timeframe='1D',
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d')
+                ).df
+                
+                # Get data for the last 7 days
+                start_date = end_date - timedelta(days=7)
+                hourly_data = self.api.get_bars(
+                    self.symbol,
+                    timeframe='1H',
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d')
+                ).df
+                
+                # Get data for the last day
+                start_date = end_date - timedelta(days=1)
+                minute_data = self.api.get_bars(
+                    self.symbol,
+                    timeframe='15Min',
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d')
+                ).df
+                
+                # Check if we got any data
+                if daily_data.empty:
+                    logger.error(f"No daily data available for {self.symbol}")
+                    raise ValueError(f"No daily data available for {self.symbol}")
+                
+                # Log data info
+                logger.info(f"Daily data shape: {daily_data.shape}, columns: {daily_data.columns.tolist()}")
+                logger.info(f"Sample of daily data:\n{daily_data.head()}")
+                
+                # Ensure required columns exist
+                required_columns = ['close', 'high', 'low', 'open', 'volume']
+                for df in [daily_data, hourly_data, minute_data]:
+                    if not df.empty:  # Only check non-empty DataFrames
+                        missing_cols = [col for col in required_columns if col not in df.columns]
+                        if missing_cols:
+                            raise ValueError(f"Missing required columns: {missing_cols}")
+                
+                # Calculate technical indicators
+                technical_indicators = self._calculate_technical_indicators(daily_data)
+                
+                return {
+                    "current_data": current_data,
+                    "daily_data": {
+                        "dates": daily_data.index.strftime('%Y-%m-%d').tolist(),
+                        "open": daily_data['open'].tolist(),
+                        "high": daily_data['high'].tolist(),
+                        "low": daily_data['low'].tolist(),
+                        "close": daily_data['close'].tolist(),
+                        "volume": daily_data['volume'].tolist()
+                    },
+                    "hourly_data": {
+                        "dates": hourly_data.index.strftime('%Y-%m-%d %H:%M').tolist() if not hourly_data.empty else [],
+                        "open": hourly_data['open'].tolist() if not hourly_data.empty else [],
+                        "high": hourly_data['high'].tolist() if not hourly_data.empty else [],
+                        "low": hourly_data['low'].tolist() if not hourly_data.empty else [],
+                        "close": hourly_data['close'].tolist() if not hourly_data.empty else [],
+                        "volume": hourly_data['volume'].tolist() if not hourly_data.empty else []
+                    },
+                    "minute_data": {
+                        "dates": minute_data.index.strftime('%Y-%m-%d %H:%M').tolist() if not minute_data.empty else [],
+                        "open": minute_data['open'].tolist() if not minute_data.empty else [],
+                        "high": minute_data['high'].tolist() if not minute_data.empty else [],
+                        "low": minute_data['low'].tolist() if not minute_data.empty else [],
+                        "close": minute_data['close'].tolist() if not minute_data.empty else [],
+                        "volume": minute_data['volume'].tolist() if not minute_data.empty else []
+                    },
+                    "technical_indicators": technical_indicators
+                }
+                
+            except Exception as e:
+                logger.error(f"Error getting historical data: {str(e)}")
+                raise ValueError(f"Failed to get historical data for {self.symbol}: {str(e)}")
+            
         except Exception as e:
-            logger.error(f"Error getting bars: {str(e)}")
-            return None
-
-    def get_trades(self, days: int = 5):
-        """Get recent trades for the symbol."""
+            logger.error(f"Error getting market data: {str(e)}")
+            raise
+            
+    def _calculate_technical_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate technical indicators using numpy."""
         try:
-            now = datetime.now(ZoneInfo("America/New_York"))
-            req = StockTradesRequest(
-                symbol_or_symbols=self.symbol,
-                start=now - timedelta(days=days)
-            )
-            return self.historical_client.get_stock_trades(req).df
-        except Exception as e:
-            logger.error(f"Error getting trades: {str(e)}")
-            return None
-
-    def get_quotes(self, days: int = 5):
-        """Get recent quotes for the symbol."""
-        try:
-            now = datetime.now(ZoneInfo("America/New_York"))
-            req = StockQuotesRequest(
-                symbol_or_symbols=self.symbol,
-                start=now - timedelta(days=days)
-            )
-            return self.historical_client.get_stock_quotes(req).df
-        except Exception as e:
-            logger.error(f"Error getting quotes: {str(e)}")
-            return None
-
-    def get_latest_quote(self):
-        """Get the latest quote for the symbol."""
-        try:
-            # Use direct HTTP request to avoid SDK parameter issues
-            url = f"https://data.alpaca.markets/v2/stocks/{self.symbol}/quotes/latest"
-            headers = {
-                "APCA-API-KEY-ID": self.api_key,
-                "APCA-API-SECRET-KEY": self.secret_key
+            close = data['close'].values
+            high = data['high'].values
+            low = data['low'].values
+            volume = data['volume'].values
+            
+            # Calculate SMA
+            def sma(data, period):
+                return np.convolve(data, np.ones(period)/period, mode='valid')
+            
+            # Calculate EMA
+            def ema(data, period):
+                return pd.Series(data).ewm(span=period, adjust=False).mean().values
+            
+            # Calculate RSI
+            def rsi(data, period=14):
+                delta = np.diff(data)
+                gain = np.where(delta > 0, delta, 0)
+                loss = np.where(delta < 0, -delta, 0)
+                avg_gain = np.mean(gain[:period])
+                avg_loss = np.mean(loss[:period])
+                rs = avg_gain / avg_loss if avg_loss != 0 else 0
+                rsi_value = 100 - (100 / (1 + rs))
+                return [rsi_value] * len(data)  # Return a list of the same length as input data
+            
+            # Calculate MACD
+            def macd(data, fast=12, slow=26, signal=9):
+                ema_fast = ema(data, fast)
+                ema_slow = ema(data, slow)
+                macd_line = ema_fast - ema_slow
+                signal_line = ema(macd_line, signal)
+                return macd_line, signal_line, macd_line - signal_line
+            
+            # Calculate Bollinger Bands
+            def bollinger_bands(data, period=20, std_dev=2):
+                sma_20 = sma(data, period)
+                std = np.std(data[-period:])
+                upper = sma_20 + (std * std_dev)
+                lower = sma_20 - (std * std_dev)
+                return upper, sma_20, lower
+            
+            return {
+                "trend": {
+                    "sma_20": sma(close, 20).tolist(),
+                    "sma_50": sma(close, 50).tolist(),
+                    "sma_200": sma(close, 200).tolist(),
+                    "ema_20": ema(close, 20).tolist(),
+                    "ema_50": ema(close, 50).tolist(),
+                    "trend_strength": ((sma(close, 20)[-1] - sma(close, 50)[-1]) / sma(close, 50)[-1]) * 100
+                },
+                "momentum": {
+                    "rsi": rsi(close),
+                    "macd": {
+                        "macd_line": macd(close)[0].tolist(),
+                        "signal_line": macd(close)[1].tolist(),
+                        "histogram": macd(close)[2].tolist()
+                    }
+                },
+                "volatility": {
+                    "bollinger_bands": {
+                        "upper": bollinger_bands(close)[0].tolist(),
+                        "middle": bollinger_bands(close)[1].tolist(),
+                        "lower": bollinger_bands(close)[2].tolist()
+                    }
+                },
+                "volume": {
+                    "volume_sma": sma(volume, 20).tolist()
+                }
             }
-            params = {
-                "feed": "iex"  # Explicitly set feed without limit parameter
-            }
-            
-            logger.info(f"Making direct HTTP request to: {url}")
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            quote_data = response.json()
-            logger.info(f"Quote data received: {quote_data}")
-            
-            return quote_data.get("quote")
         except Exception as e:
-            logger.error(f"Error getting latest quote: {str(e)}")
-            return None
-
-    def get_options_snapshot(self):
-        url = f"https://data.alpaca.markets/v1beta1/options/snapshots/{self.symbol}"
-        headers = {
-            "APCA-API-KEY-ID": self.api_key,
-            "APCA-API-SECRET-KEY": self.secret_key,
-        }
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        data = response.json().get("snapshots", {})
-        logger.info("\n🧠 Showing options chain snapshot...")
-
-        for contract_symbol, info in list(data.items())[:10]:  # Limit to 10 for clarity
-            quote = info.get("latestQuote", {})
-            trade = info.get("latestTrade", {})
-            greeks = info.get("greeks", {})
-
-            print(f"\n📄 Symbol: {contract_symbol}")
-            print(f"  Last Price: {trade.get('p')}")
-            print(f"  IV: {greeks.get('implied_volatility', 'N/A')}")
-            print(f"  Delta: {greeks.get('delta', 'N/A')}")
-            print(f"  Theta: {greeks.get('theta', 'N/A')}")
-            print(f"  Bid: {quote.get('bp')} | Ask: {quote.get('ap')}")
-            print("-" * 40)
-
-    async def _live_stream_handler(self, data):
-        logger.info(f"[LIVE STREAM] {data}")
-
-    async def stream_live_data(self):
-        logger.info(f"📡 Streaming live data for {self.symbol}")
-        await self.stream.subscribe_quotes(self._live_stream_handler, self.symbol)
-        await self.stream.subscribe_trades(self._live_stream_handler, self.symbol)
-        await self.stream.run()
-
-    def get_options_chain(self, expiration: str = None):
-        """Get options chain data formatted for RAG."""
+            logger.error(f"Error calculating technical indicators: {str(e)}")
+            raise
+            
+    def format_for_rag(self, data: Dict[str, Any]) -> str:
+        """Format market data for RAG in a structured, vectorizable format."""
         try:
-            req = OptionChainRequest(symbol=self.symbol, expiration=expiration)
-            chain = self.historical_client.get_option_chain(req)
+            sections = []
             
-            docs = []
-            for option in chain.options:
-                quote = option.latest_quote
-                greeks = option.greeks
-                
-                text = (
-                    f"Contract: {option.symbol}\n"
-                    f"Type: {option.type}\n"
-                    f"Strike: {option.strike_price}\n"
-                    f"Expiration: {option.expiration_date}\n"
-                    f"Last Price: {quote.last_price if quote else 'N/A'}\n"
-                    f"Bid: {quote.bid_price if quote else 'N/A'}, Ask: {quote.ask_price if quote else 'N/A'}\n"
-                    f"Delta: {greeks.delta if greeks else 'N/A'}, "
-                    f"Theta: {greeks.theta if greeks else 'N/A'}, "
-                    f"IV: {greeks.implied_volatility if greeks else 'N/A'}"
-                )
-                docs.append(text)
+            # Get current timestamp in NY timezone
+            current_time = datetime.now(ZoneInfo('America/New_York'))
+            timestamp = current_time.isoformat()
             
-            return docs
-        except Exception as e:
-            logger.error(f"Error getting options chain: {str(e)}")
-            return []
+            # Market Overview Section
+            overview = [
+                f"MARKET OVERVIEW:",
+                f"Symbol: {self.symbol}",
+                f"Current Price: ${data.get('current_data', {}).get('price', 0):.2f}",
+                f"Timestamp: {timestamp}",
+                f"Market Status: {'Closed' if data.get('current_data', {}).get('market_closed', False) else 'Open'}",
+                f"Exchange: {data.get('current_data', {}).get('exchange', 'Unknown')}",
+                f"Asset Class: {data.get('current_data', {}).get('asset_class', 'Unknown')}"
+            ]
+            sections.append("\n".join(overview))
 
-    def get_options_data(self, symbol: str, strike: Optional[float] = None, expiration: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Get options data for a symbol."""
-        try:
-            # First get the options chain
-            url = f"https://data.alpaca.markets/v2/stocks/{symbol}/options/chains"
-            headers = {
-                "APCA-API-KEY-ID": self.api_key,
-                "APCA-API-SECRET-KEY": self.secret_key
-            }
-            
-            # Add query parameters if provided
-            params = {}
-            if strike:
-                params['strike_price'] = strike
-            if expiration:
-                params['expiration'] = expiration
-                
-            logger.info(f"Fetching options chain for {symbol} with params: {params}")
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            chain_data = response.json()
-            logger.info(f"Received chain data: {chain_data}")
-            
-            if not chain_data or not chain_data.get('chains'):
-                logger.warning(f"No options chain found for {symbol}")
-                return None
-                
-            # Get the first chain that matches our criteria
-            chain = next(
-                (c for c in chain_data['chains']
-                 if (strike is None or c['strike_price'] == strike) and
-                    (expiration is None or c['expiration_date'] == expiration)),
-                chain_data['chains'][0]  # Default to first chain if no match
-            )
-            
-            if not chain:
-                logger.warning(f"No matching options chain found for {symbol}")
-                return None
-                
-            # Get the latest quote for this option
-            option_symbol = chain['symbol']
-            quote_url = f"https://data.alpaca.markets/v2/stocks/{symbol}/options/quotes/latest"
-            logger.info(f"Fetching quote for {option_symbol}")
-            quote_response = requests.get(quote_url, headers=headers, params={'symbol': option_symbol})
-            quote_response.raise_for_status()
-            
-            quote_data = quote_response.json()
-            logger.info(f"Received quote data: {quote_data}")
-            
-            if not quote_data or not quote_data.get('quotes'):
-                logger.warning(f"No quote data found for option {option_symbol}")
-                return None
-                
-            quote = quote_data['quotes'][0]  # Get the first quote
-            
-            # Get the Greeks
-            greeks_url = f"https://data.alpaca.markets/v2/stocks/{symbol}/options/greeks/latest"
-            logger.info(f"Fetching Greeks for {option_symbol}")
-            greeks_response = requests.get(greeks_url, headers=headers, params={'symbol': option_symbol})
-            greeks_response.raise_for_status()
-            
-            greeks_data = greeks_response.json()
-            logger.info(f"Received Greeks data: {greeks_data}")
-            
-            greeks = greeks_data.get('greeks', [{}])[0] if greeks_data and greeks_data.get('greeks') else {}
-            
-            # Extract and format the data
-            result = {
-                'type': 'call' if chain['option_type'] == 'C' else 'put',
-                'strike': chain['strike_price'],
-                'expiration': chain['expiration_date'],
-                'last_price': quote.get('last_price'),
-                'volume': quote.get('volume'),
-                'open_interest': chain.get('open_interest'),
-                'implied_volatility': greeks.get('implied_volatility'),
-                'delta': greeks.get('delta'),
-                'gamma': greeks.get('gamma'),
-                'theta': greeks.get('theta'),
-                'vega': greeks.get('vega')
-            }
-            
-            logger.info(f"Returning options data: {result}")
-            return result
+            # Price Action Section
+            price_action = ["PRICE ACTION:"]
+            if 'daily_data' in data:
+                daily = data['daily_data']
+                price_action.extend([
+                    f"Open: ${daily.get('open', [0])[-1]:.2f}",
+                    f"High: ${daily.get('high', [0])[-1]:.2f}",
+                    f"Low: ${daily.get('low', [0])[-1]:.2f}",
+                    f"Close: ${daily.get('close', [0])[-1]:.2f}",
+                    f"Volume: {daily.get('volume', [0])[-1]:,}",
+                    f"VWAP: ${daily.get('vwap', 0):.2f}"
+                ])
+            sections.append("\n".join(price_action))
+
+            # Technical Indicators Section
+            if 'technical_indicators' in data:
+                indicators = ["TECHNICAL INDICATORS:"]
+                tech = data['technical_indicators']
+                if 'trend' in tech:
+                    indicators.extend([
+                        f"SMA 20: {tech['trend'].get('sma_20', [0])[-1]:.2f}",
+                        f"SMA 50: {tech['trend'].get('sma_50', [0])[-1]:.2f}",
+                        f"EMA 20: {tech['trend'].get('ema_20', [0])[-1]:.2f}",
+                        f"Trend Strength: {tech['trend'].get('trend_strength', 0):.2f}%"
+                    ])
+                if 'momentum' in tech:
+                    momentum = tech['momentum']
+                    indicators.extend([
+                        f"RSI: {momentum.get('rsi', [0])[-1]:.1f}",
+                        f"MACD: {momentum.get('macd', {}).get('macd_line', [0])[-1]:.2f}",
+                        f"MACD Signal: {momentum.get('macd', {}).get('signal_line', [0])[-1]:.2f}",
+                        f"MACD Histogram: {momentum.get('macd', {}).get('histogram', [0])[-1]:.2f}"
+                    ])
+                if 'volatility' in tech:
+                    volatility = tech['volatility']
+                    bb = volatility.get('bollinger_bands', {})
+                    indicators.extend([
+                        f"Bollinger Bands:",
+                        f"  Upper: ${bb.get('upper', [0])[-1]:.2f}",
+                        f"  Middle: ${bb.get('middle', [0])[-1]:.2f}",
+                        f"  Lower: ${bb.get('lower', [0])[-1]:.2f}"
+                    ])
+                sections.append("\n".join(indicators))
+
+            return "\n\n".join(sections)
             
         except Exception as e:
-            logger.error(f"Error getting options data: {e}")
-            return None
-
-
-if __name__ == "__main__":
-    symbol = "SPY"
-    data = ComprehensiveMarketData(symbol)
-
-    print("\n📊 Hourly Bars:")
-    print(data.get_bars(days=5, interval="hour").head())
-
-    print("\n📈 Daily Bars:")
-    print(data.get_bars(days=30, interval="day").head())
-
-    print("\n💬 Trades:")
-    print(data.get_trades(days=3).head())
-
-    print("\n📉 Quotes:")
-    print(data.get_quotes(days=3).head())
-
-    print("\n🔍 Latest Quote:")
-    print(data.get_latest_quote())
-
-    print("\n💎 Options Snapshot:")
-    try:
-        data.get_options_snapshot()
-    except Exception as e:
-        logger.warning(f"❌ Could not fetch options snapshot: {e}")
-
-    print("\n📡 Starting live stream... Press Ctrl+C to exit")
-    try:
-        asyncio.run(data.stream_live_data())
-    except KeyboardInterrupt:
-        logger.info("Streaming stopped by user.")
+            logger.error(f"Error formatting market data for RAG: {str(e)}")
+            return f"Error formatting market data: {str(e)}"

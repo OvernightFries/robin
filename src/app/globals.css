@@ -1,0 +1,225 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* CSS variables */
+:root {
+  --wizard-green: #00ff9d;
+  --wizard-accent: #00D884;
+  --wizard-background: #0A1512;
+  --wizard-background-lighter: #1A2522;
+  --wizard-background-darker: #081210;
+  --wizard-neutral-light: #2A3532;
+  --wizard-neutral-dark: #1C2522;
+  --wizard-text-primary: #ffffff;
+  --wizard-text-secondary: #B4C4BE;
+  --wizard-text-muted: #4D6B5D;
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 0, 0, 0;
+  --background-end-rgb: 0, 0, 0;
+}
+
+@layer base {
+  body {
+    @apply min-h-screen bg-gray-900 text-white antialiased;
+    background-image:
+      radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.03), transparent 60%),
+      radial-gradient(circle at 0% 50%, rgba(16, 185, 129, 0.03), transparent 60%);
+    background: linear-gradient(to bottom,
+        rgb(var(--background-start-rgb)),
+        rgb(var(--background-end-rgb)));
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-medium;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply bg-green-500 text-white font-bold py-2 px-4 rounded;
+  }
+
+  .glass-card {
+    @apply bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg;
+  }
+
+  .wizard-button,
+  .analyze-button {
+    @apply bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-all;
+  }
+
+  .analyze-button:disabled {
+    @apply opacity-50 cursor-not-allowed;
+    background: var(--wizard-disabled);
+  }
+
+  .input-field {
+    @apply bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500;
+  }
+
+  .message-content {
+    @apply text-[color:var(--wizard-text-secondary)] leading-relaxed;
+    letter-spacing: -0.011em;
+  }
+
+  .message-content h3 {
+    @apply text-[color:var(--wizard-green)] text-lg font-medium mb-4;
+  }
+
+  .message-content ul,
+  .message-content ol {
+    @apply space-y-2 my-4;
+  }
+
+  .message-content li {
+    @apply flex items-start gap-2;
+  }
+
+  .message-content li::before {
+    content: '•';
+    @apply text-[color:var(--wizard-accent)] flex-shrink-0;
+  }
+
+  .message-content ol {
+    counter-reset: list-counter;
+  }
+
+  .message-content ol li {
+    counter-increment: list-counter;
+  }
+
+  .message-content ol li::before {
+    content: counter(list-counter) '.';
+    @apply text-[color:var(--wizard-accent)] mr-2;
+  }
+
+  .message-content p {
+    @apply mb-4;
+  }
+
+  .message-content strong {
+    @apply text-[color:var(--wizard-text-primary)] font-medium;
+  }
+
+  .message-content code {
+    @apply bg-[color:var(--wizard-background-darker)] text-[color:var(--wizard-green)] px-2 py-1 rounded-md text-sm font-mono;
+  }
+
+  .message-content pre {
+    @apply bg-[color:var(--wizard-background-darker)] p-4 rounded-xl my-4 overflow-x-auto;
+  }
+
+  .message-content pre code {
+    @apply bg-transparent p-0 text-[color:var(--wizard-text-secondary)];
+  }
+
+  .message-content table {
+    @apply w-full my-4 border-collapse;
+  }
+
+  .message-content th,
+  .message-content td {
+    @apply border border-[color:var(--wizard-neutral-light)] px-4 py-2 text-left;
+  }
+
+  .message-content th {
+    @apply bg-[color:var(--wizard-background-darker)] text-[color:var(--wizard-green)] font-medium;
+  }
+
+  .message-content blockquote {
+    @apply border-l-4 border-[color:var(--wizard-accent)] pl-4 my-4 italic text-[color:var(--wizard-text-muted)];
+  }
+
+  .message-content a {
+    @apply text-[color:var(--wizard-green)] hover:text-[color:var(--wizard-accent)] transition-colors;
+  }
+
+  /* Chat styling */
+  .chat-message {
+    @apply text-gray-300 leading-relaxed;
+  }
+
+  .chat-header,
+  .chat-icon,
+  .chat-time {
+    @apply text-blue-400;
+  }
+
+  .chat-username {
+    @apply text-white font-medium;
+  }
+
+  .chat-code {
+    @apply bg-gray-800 text-blue-400 px-2 py-1 rounded-md text-sm font-mono;
+  }
+
+  .chat-code-block {
+    @apply bg-gray-800 p-4 rounded-xl my-4 overflow-x-auto;
+  }
+
+  .chat-code-content {
+    @apply bg-transparent p-0 text-gray-300;
+  }
+
+  .chat-table-header {
+    @apply border border-gray-700 px-4 py-2 text-left;
+  }
+
+  .chat-table-cell {
+    @apply bg-gray-800 text-blue-400 font-medium;
+  }
+
+  .chat-quote {
+    @apply border-l-4 border-blue-500 pl-4 my-4 italic text-gray-400;
+  }
+
+  .chat-link {
+    @apply text-blue-400 hover:text-blue-300 transition-colors;
+  }
+}
+
+/* Animation */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.2;
+  }
+
+  50% {
+    transform: translateY(-12px) scale(1.1);
+    opacity: 0.3;
+  }
+}
+
+.animate-float {
+  animation: float 8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.glow-effect {
+  @apply relative overflow-hidden;
+}
+
+.glow-effect::after {
+  content: '';
+  @apply absolute inset-0;
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+      rgba(0, 255, 157, 0.1) 0%,
+      transparent 60%);
+  opacity: 0;
+  transition: opacity 0.4s ease-in-out;
+  pointer-events: none;
+}
+
+.glow-effect:hover::after {
+  @apply opacity-80;
+}
