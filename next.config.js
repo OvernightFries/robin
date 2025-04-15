@@ -5,12 +5,8 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://backend:8000/api/:path*',
-      },
-      {
-        source: '/ws/:path*',
-        destination: 'http://backend:8765/:path*',
-      },
+        destination: 'http://localhost:8000/:path*',
+      }
     ];
   },
   webpack: (config) => {

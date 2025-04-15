@@ -16,62 +16,37 @@
   --wizard-text-primary: #ffffff;
   --wizard-text-secondary: #B4C4BE;
   --wizard-text-muted: #4D6B5D;
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 0, 0, 0;
-  --background-end-rgb: 0, 0, 0;
 }
 
 @layer base {
   body {
-    @apply min-h-screen bg-gray-900 text-white antialiased;
-    background-image:
-      radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.03), transparent 60%),
-      radial-gradient(circle at 0% 50%, rgba(16, 185, 129, 0.03), transparent 60%);
-    background: linear-gradient(to bottom,
-        rgb(var(--background-start-rgb)),
-        rgb(var(--background-end-rgb)));
-  }
-
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    @apply font-medium;
+    @apply bg-wizard-background text-wizard-text-primary antialiased;
   }
 }
 
 @layer components {
-  .btn {
-    @apply bg-green-500 text-white font-bold py-2 px-4 rounded;
+  .wizard-gradient {
+    @apply bg-gradient-to-r from-wizard-green to-wizard-accent bg-clip-text text-transparent;
   }
 
   .glass-card {
-    @apply bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg;
+    @apply bg-wizard-background-lighter/50 backdrop-blur-sm border border-wizard-neutral-dark/30 rounded-xl p-6 shadow-lg;
   }
 
-  .wizard-button,
-  .analyze-button {
-    @apply bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium py-2 px-4 rounded-lg hover:opacity-90 transition-all;
-  }
-
-  .analyze-button:disabled {
-    @apply opacity-50 cursor-not-allowed;
-    background: var(--wizard-disabled);
+  .wizard-button {
+    @apply bg-wizard-green/10 text-wizard-green border border-wizard-green/20 rounded-lg px-6 py-2 font-medium hover:bg-wizard-green/20 hover:border-wizard-green/30 transition-all duration-200;
   }
 
   .input-field {
-    @apply bg-gray-800/50 border border-gray-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500;
+    @apply bg-wizard-background-darker/50 border border-wizard-neutral-dark/30 rounded-lg px-4 py-2 text-wizard-text-primary placeholder-wizard-text-muted/50 focus:outline-none focus:ring-2 focus:ring-wizard-green/20 focus:border-wizard-green/30;
   }
 
   .message-content {
-    @apply text-[color:var(--wizard-text-secondary)] leading-relaxed;
-    letter-spacing: -0.011em;
+    @apply text-wizard-text-secondary leading-relaxed;
   }
 
   .message-content h3 {
-    @apply text-[color:var(--wizard-green)] text-lg font-medium mb-4;
+    @apply text-wizard-green text-lg font-medium mb-4;
   }
 
   .message-content ul,
@@ -85,7 +60,7 @@
 
   .message-content li::before {
     content: '•';
-    @apply text-[color:var(--wizard-accent)] flex-shrink-0;
+    @apply text-wizard-accent flex-shrink-0;
   }
 
   .message-content ol {
@@ -98,7 +73,7 @@
 
   .message-content ol li::before {
     content: counter(list-counter) '.';
-    @apply text-[color:var(--wizard-accent)] mr-2;
+    @apply text-wizard-accent mr-2;
   }
 
   .message-content p {
@@ -106,19 +81,19 @@
   }
 
   .message-content strong {
-    @apply text-[color:var(--wizard-text-primary)] font-medium;
+    @apply text-wizard-text-primary font-medium;
   }
 
   .message-content code {
-    @apply bg-[color:var(--wizard-background-darker)] text-[color:var(--wizard-green)] px-2 py-1 rounded-md text-sm font-mono;
+    @apply bg-wizard-background-darker text-wizard-green px-2 py-1 rounded-md text-sm font-mono;
   }
 
   .message-content pre {
-    @apply bg-[color:var(--wizard-background-darker)] p-4 rounded-xl my-4 overflow-x-auto;
+    @apply bg-wizard-background-darker p-4 rounded-xl my-4 overflow-x-auto;
   }
 
   .message-content pre code {
-    @apply bg-transparent p-0 text-[color:var(--wizard-text-secondary)];
+    @apply bg-transparent p-0 text-wizard-text-secondary;
   }
 
   .message-content table {
@@ -127,19 +102,19 @@
 
   .message-content th,
   .message-content td {
-    @apply border border-[color:var(--wizard-neutral-light)] px-4 py-2 text-left;
+    @apply border border-wizard-neutral-light px-4 py-2 text-left;
   }
 
   .message-content th {
-    @apply bg-[color:var(--wizard-background-darker)] text-[color:var(--wizard-green)] font-medium;
+    @apply bg-wizard-background-darker text-wizard-green font-medium;
   }
 
   .message-content blockquote {
-    @apply border-l-4 border-[color:var(--wizard-accent)] pl-4 my-4 italic text-[color:var(--wizard-text-muted)];
+    @apply border-l-4 border-wizard-accent pl-4 my-4 italic text-wizard-text-muted;
   }
 
   .message-content a {
-    @apply text-[color:var(--wizard-green)] hover:text-[color:var(--wizard-accent)] transition-colors;
+    @apply text-wizard-green hover:text-wizard-accent transition-colors;
   }
 
   /* Chat styling */
@@ -186,18 +161,27 @@
   }
 }
 
-/* Animation */
 @keyframes float {
 
   0%,
   100% {
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
     opacity: 0.2;
   }
 
   50% {
-    transform: translateY(-12px) scale(1.1);
+    transform: translateY(-12px);
     opacity: 0.3;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
   }
 }
 

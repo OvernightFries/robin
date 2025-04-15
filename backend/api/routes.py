@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pinecone import Pinecone
 import os
+from pydantic import BaseModel
+from backend.rag.ollama_client import call_ollama
 
 router = APIRouter()
 
@@ -9,6 +11,43 @@ router = APIRouter()
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index_name = os.getenv("PINECONE_INDEX_NAME", "robin-ai")
 index = pc.Index(index_name)
+
+class QueryRequest(BaseModel):
+    query: str
+    symbol: Optional[str] = None
+
+@router.post("/query")
+async def process_query(request: QueryRequest) -> Dict[str, Any]:
+    """Process a query using both real-time data and knowledge base."""
+    try:
+        # Get relevant knowledge from PDF database
+        knowledge_results = await search_strategies(
+            request.query,
+            strategy_type=None,
+            require_math=False,
+            top_k=5
+        )
+        
+        # Combine knowledge base results
+        knowledge_context = "\n\nRelevant Trading Knowledge:\n"
+        for result in knowledge_results:
+            knowledge_context += f"\n{result['text']}"
+            
+        # Generate response using Ollama
+        response = await call_ollama(
+            request.query,
+            knowledge_context,
+            ""  # No market context for now
+        )
+        
+        return {
+            "status": "success",
+            "response": response,
+            "knowledge_context": knowledge_results
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/search/strategies")
 async def search_strategies(

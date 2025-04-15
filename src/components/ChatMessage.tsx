@@ -3,6 +3,8 @@
 import { Message } from '@/lib/constants'
 import { BlockMath, InlineMath } from 'react-katex'
 import 'katex/dist/katex.min.css'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 interface ChatMessageProps {
   message: Message
@@ -16,14 +18,25 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
   // Function to render message content with LaTeX support
   const renderContent = (content: string) => {
-    const parts = content.split(/(\$\$.*?\$\$|\$.*?\$)/g)
-    return parts.map((part, index) => {
-      if (part.startsWith('$$') && part.endsWith('$$')) {
-        return <BlockMath key={index}>{part.slice(2, -2)}</BlockMath>
-      } else if (part.startsWith('$') && part.endsWith('$')) {
-        return <InlineMath key={index}>{part.slice(1, -1)}</InlineMath>
-      } else {
-        return <span key={index}>{part}</span>
+    // Safely match inline ($...$) and block ($$...$$) LaTeX without grabbing currency
+    const parts = content.split(/(\$\$[^$]*\$\$|\$(?!\d)[^$\n]*?\$)/g)
+
+    return parts.map((part, i) => {
+      try {
+        if (part.startsWith('$$') && part.endsWith('$$')) {
+          return <BlockMath key={i}>{part.slice(2, -2)}</BlockMath>
+        } else if (part.startsWith('$') && part.endsWith('$')) {
+          return <InlineMath key={i}>{part.slice(1, -1)}</InlineMath>
+        } else {
+          return <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+            {part}
+          </ReactMarkdown>
+        }
+      } catch (err) {
+        console.error('Math render failed:', err)
+        return <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+          {part}
+        </ReactMarkdown>
       }
     })
   }

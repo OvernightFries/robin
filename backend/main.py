@@ -66,12 +66,16 @@ except Exception as e:
     raise
 
 class QueryRequest(BaseModel):
+    query: str
+    symbol: Optional[str] = None
+
+class InitializeTickerRequest(BaseModel):
     symbol: str
-    query: Optional[str] = None
 
 @app.post("/initialize_ticker")
-async def initialize_ticker(symbol: str) -> Dict[str, Any]:
+async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
     """Initialize data for a new ticker symbol."""
+    symbol = request.symbol
     logger.info(f"Initializing data for symbol: {symbol}")
     
     try:
@@ -101,57 +105,43 @@ async def initialize_ticker(symbol: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/query")
-async def process_query(request: QueryRequest) -> Dict[str, Any]:
-    """Process a query using both real-time data and knowledge base."""
-    logger.info(f"Processing query for symbol: {request.symbol}")
-    
-    if not request.query:
-        raise HTTPException(status_code=400, detail="Query parameter is required")
-    
+async def query(request: QueryRequest):
+    logger.debug(f"Received query request: {request}")
     try:
-        # Get current market context
-        market_data = MarketData(request.symbol)
-        market_context = await market_data.get_market_data()
-        formatted_context = market_data.format_for_rag(market_context)
-        logger.info(f"Retrieved market context for {request.symbol}")
+        # Get market data
+        market_data_instance = MarketData(request.symbol)
+        market_context = await market_data_instance.get_market_data()
+        logger.debug(f"Retrieved market data: {market_context}")
         
-        # Get relevant knowledge from PDF database
-        try:
-            knowledge_results = await knowledge_base.search_similar_market_conditions(
-                request.query,
-                request.symbol,
-                top_k=5
-            )
-            logger.info(f"Retrieved {len(knowledge_results)} relevant knowledge results")
-            
-            # Combine knowledge base results with market context
-            knowledge_context = "\n\nRelevant Trading Knowledge:\n"
-            for result in knowledge_results:
-                knowledge_context += f"\n{result.metadata['text']}"
-        except Exception as e:
-            logger.warning(f"Error retrieving knowledge base results: {str(e)}")
-            knowledge_context = "\nNo relevant knowledge base results found."
+        # Get knowledge results
+        knowledge_results = await knowledge_base.search_similar_market_conditions(
+            request.query,
+            request.symbol if request.symbol else "general",
+            top_k=5
+        )
+        logger.debug(f"Retrieved knowledge results: {knowledge_results}")
         
-        # Generate response using both contexts
-        try:
-            response = await call_ollama(
-                request.query,
-                knowledge_context,  # PDF knowledge base context
-                formatted_context   # Real-time market data context
-            )
-            logger.info("Successfully generated response")
-        except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
-            response = f"Error generating response: {str(e)}"
+        # Format knowledge results
+        knowledge_context = "\n\nRelevant Trading Knowledge:\n"
+        for result in knowledge_results:
+            knowledge_context += f"\n{result.metadata['text']}"
+        
+        # Generate response
+        response = await call_ollama(
+            query=request.query,
+            context=knowledge_context,
+            market_context=market_context
+        )
+        logger.debug(f"Generated response: {response}")
         
         return {
+            "status": "success",
             "response": response,
             "market_context": market_context,
-            "knowledge_context": knowledge_results if 'knowledge_results' in locals() else []
+            "knowledge_context": knowledge_context
         }
-        
     except Exception as e:
-        logger.error(f"Error processing query: {str(e)}")
+        logger.error(f"Error processing query: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")

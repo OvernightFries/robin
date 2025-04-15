@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import ChatMessage from '@/components/ChatMessage'
 import { Message } from '@/lib/constants'
+import { api } from '@/lib/api'
 
 export default function AnalyzePage() {
   const params = useParams()
@@ -39,31 +40,68 @@ export default function AnalyzePage() {
   useEffect(() => {
     const initializeTicker = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/initialize_ticker?symbol=${symbol}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
+        const data = await api.initializeTicker(symbol);
 
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`)
+        // Format market data message
+        const marketData = data.market_context;
+        let marketMessage = `Welcome! I've loaded ${symbol} data:\n\n`;
+
+        // Current Data
+        if (marketData?.current_data) {
+          marketMessage += `Current Data:\n`;
+          marketMessage += `• Price: $${marketData.current_data.price?.toFixed(2) || 'N/A'}\n`;
+          marketMessage += `• Volume: ${marketData.current_data.volume?.toLocaleString() || 'N/A'}\n`;
+          marketMessage += `• Bid: $${marketData.current_data.bid?.toFixed(2) || 'N/A'}\n`;
+          marketMessage += `• Ask: $${marketData.current_data.ask?.toFixed(2) || 'N/A'}\n\n`;
         }
 
-        const data = await res.json();
+        // Daily Data
+        if (marketData?.daily_data) {
+          marketMessage += `Daily Data:\n`;
+          marketMessage += `• Open: $${marketData.daily_data.open?.[marketData.daily_data.open.length - 1]?.toFixed(2) || 'N/A'}\n`;
+          marketMessage += `• High: $${marketData.daily_data.high?.[marketData.daily_data.high.length - 1]?.toFixed(2) || 'N/A'}\n`;
+          marketMessage += `• Low: $${marketData.daily_data.low?.[marketData.daily_data.low.length - 1]?.toFixed(2) || 'N/A'}\n`;
+          marketMessage += `• Close: $${marketData.daily_data.close?.[marketData.daily_data.close.length - 1]?.toFixed(2) || 'N/A'}\n`;
+          marketMessage += `• Volume: ${marketData.daily_data.volume?.[marketData.daily_data.volume.length - 1]?.toLocaleString() || 'N/A'}\n\n`;
+        }
+
+        // Technical Indicators
+        if (marketData?.technical_indicators) {
+          const tech = marketData.technical_indicators;
+          marketMessage += `Technical Indicators:\n`;
+
+          // Trend Indicators
+          if (tech.trend) {
+            marketMessage += `• SMA 20: ${tech.trend.sma_20?.[tech.trend.sma_20.length - 1]?.toFixed(2) || 'N/A'}\n`;
+            marketMessage += `• SMA 50: ${tech.trend.sma_50?.[tech.trend.sma_50.length - 1]?.toFixed(2) || 'N/A'}\n`;
+            marketMessage += `• EMA 20: ${tech.trend.ema_20?.[tech.trend.ema_20.length - 1]?.toFixed(2) || 'N/A'}\n`;
+            marketMessage += `• Trend Strength: ${tech.trend.trend_strength?.toFixed(2) || 'N/A'}%\n`;
+          }
+
+          // Momentum Indicators
+          if (tech.momentum) {
+            marketMessage += `• RSI: ${tech.momentum.rsi?.[tech.momentum.rsi.length - 1]?.toFixed(1) || 'N/A'}\n`;
+            if (tech.momentum.macd) {
+              marketMessage += `• MACD: ${tech.momentum.macd.macd_line?.[tech.momentum.macd.macd_line.length - 1]?.toFixed(2) || 'N/A'}\n`;
+              marketMessage += `• MACD Signal: ${tech.momentum.macd.signal_line?.[tech.momentum.macd.signal_line.length - 1]?.toFixed(2) || 'N/A'}\n`;
+              marketMessage += `• MACD Histogram: ${tech.momentum.macd.histogram?.[tech.momentum.macd.histogram.length - 1]?.toFixed(2) || 'N/A'}\n`;
+            }
+          }
+
+          // Volatility Indicators
+          if (tech.volatility?.bollinger_bands) {
+            const bb = tech.volatility.bollinger_bands;
+            marketMessage += `• BB Upper: ${bb.upper?.[bb.upper.length - 1]?.toFixed(2) || 'N/A'}\n`;
+            marketMessage += `• BB Middle: ${bb.middle?.[bb.middle.length - 1]?.toFixed(2) || 'N/A'}\n`;
+            marketMessage += `• BB Lower: ${bb.lower?.[bb.lower.length - 1]?.toFixed(2) || 'N/A'}\n`;
+          }
+        }
+
+        marketMessage += `\nWhat would you like to analyze?`;
 
         setMessages([{
           role: 'assistant',
-          content: `Welcome! I've loaded ${symbol} data:
-• Current Price: $${data.market_context.current_price}
-• Open: $${data.market_context.open}
-• High: $${data.market_context.high}
-• Low: $${data.market_context.low}
-• Volume: ${data.market_context.volume.toLocaleString()}
-• RSI: ${data.market_context.rsi.toFixed(1)}
-• MACD: ${data.market_context.macd.toFixed(2)}
-
-What would you like to analyze?`,
+          content: marketMessage,
           timestamp: new Date()
         }]);
       } catch (error) {
@@ -93,22 +131,10 @@ What would you like to analyze?`,
     setLoading(true);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/query`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          symbol,
-          query: input
-        }),
+      const data = await api.query({
+        symbol,
+        query: input
       });
-
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`)
-      }
-
-      const data = await res.json();
 
       setMessages(prev => [...prev, {
         role: 'assistant',

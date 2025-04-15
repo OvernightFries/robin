@@ -24,7 +24,8 @@ COPY requirements.txt .
 # Install all Python dependencies in one step
 RUN pip install --no-cache-dir -r requirements.txt && \
   pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-  pip install --no-cache-dir sentence-transformers
+  pip install --no-cache-dir sentence-transformers && \
+  python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 # Copy the rest of the application
 COPY . .
@@ -44,7 +45,7 @@ ENV PINECONE_API_KEY=${PINECONE_API_KEY}
 ENV PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
 ENV PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-robin-ai}
 ENV REDIS_URL=redis://redis:6379
-ENV OLLAMA_HOST=http://ollama:11434
+ENV OLLAMA_HOST=http://35.202.133.28:11434
 ENV MODEL_NAME=llama3
 ENV EMBEDDING_MODEL=nomic-embed-text
 ENV LOG_LEVEL=INFO

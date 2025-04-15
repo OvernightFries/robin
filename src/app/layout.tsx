@@ -1,16 +1,10 @@
 // app/layout.tsx
 import './globals.css'
-import { Inter, Poppins } from 'next/font/google'
+import { Inter } from 'next/font/google'
 
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
-})
-
-const poppins = Poppins({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  variable: '--font-poppins',
 })
 
 export const metadata = {
@@ -24,8 +18,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.variable} ${poppins.variable} min-h-screen bg-gradient-to-br from-background-start to-background-end antialiased`}>
+    <html lang="en" className={`${inter.variable}`}>
+      <body className="min-h-screen bg-wizard-background text-wizard-text-primary antialiased">
         {children}
       </body>
     </html>

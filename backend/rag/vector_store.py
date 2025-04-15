@@ -37,8 +37,9 @@ class MarketVectorStore:
         """Get embedding for text using nomic-embed-text."""
         try:
             async with aiohttp.ClientSession() as session:
+                ollama_host = os.getenv("OLLAMA_HOST", "http://35.202.133.28:11434")
                 async with session.post(
-                    "http://ollama:11434/api/embeddings",
+                    f"{ollama_host}/api/embeddings",
                     json={
                         "model": self.embedding_model,
                         "prompt": text
