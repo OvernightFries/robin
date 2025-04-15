@@ -2,241 +2,356 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import ChatMessage from '@/components/ChatMessage'
-import { Message } from '@/lib/constants'
-import { api } from '@/lib/api'
+import { Message, MarketContext, KnowledgeContext } from '@/types'
+import { initializeTicker, query } from '@/lib/api'
+import useChatStore from '@/lib/store'
+import { MarketSummary } from '@/components/MarketSummary'
+import OptionsDisplay from '@/components/OptionsDisplay'
+import TickerHeader from '@/components/TickerHeader'
+import PriceChart from '@/components/PriceChart'
 
 export default function AnalyzePage() {
   const params = useParams()
   const symbol = params.symbol as string
-  const [messages, setMessages] = useState<Message[]>([])
-  const [loading, setLoading] = useState(false)
-  const [input, setInput] = useState('')
-  const [connectionError, setConnectionError] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const { messages, context, actions } = useChatStore()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [inputValue, setInputValue] = useState('')
+  const [isQuerying, setIsQuerying] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  const checkConnection = async () => {
+  const initialize = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/health`)
-      if (!res.ok) throw new Error('Backend server is not responding')
-      setConnectionError(null)
-    } catch (error) {
-      setConnectionError('Unable to connect to the backend server. Please make sure it is running on http://localhost:8000')
-    }
-  }
+      const response = await initializeTicker(symbol, abortControllerRef.current?.signal)
+      if (!mountedRef.current) return
 
-  useEffect(() => {
-    checkConnection()
-  }, [])
+      console.log('API Response:', response);
 
-  useEffect(() => {
-    const initializeTicker = async () => {
-      try {
-        const data = await api.initializeTicker(symbol);
-
-        // Format market data message
-        const marketData = data.market_context;
-        let marketMessage = `Welcome! I've loaded ${symbol} data:\n\n`;
-
-        // Current Data
-        if (marketData?.current_data) {
-          marketMessage += `Current Data:\n`;
-          marketMessage += `• Price: $${marketData.current_data.price?.toFixed(2) || 'N/A'}\n`;
-          marketMessage += `• Volume: ${marketData.current_data.volume?.toLocaleString() || 'N/A'}\n`;
-          marketMessage += `• Bid: $${marketData.current_data.bid?.toFixed(2) || 'N/A'}\n`;
-          marketMessage += `• Ask: $${marketData.current_data.ask?.toFixed(2) || 'N/A'}\n\n`;
+      if (response.status === 'success' && response.market_context && response.options_context) {
+        // Validate the data structure
+        if (!response.market_context.current_data || !response.market_context.daily_data) {
+          throw new Error('Invalid market data structure received from server')
         }
 
-        // Daily Data
-        if (marketData?.daily_data) {
-          marketMessage += `Daily Data:\n`;
-          marketMessage += `• Open: $${marketData.daily_data.open?.[marketData.daily_data.open.length - 1]?.toFixed(2) || 'N/A'}\n`;
-          marketMessage += `• High: $${marketData.daily_data.high?.[marketData.daily_data.high.length - 1]?.toFixed(2) || 'N/A'}\n`;
-          marketMessage += `• Low: $${marketData.daily_data.low?.[marketData.daily_data.low.length - 1]?.toFixed(2) || 'N/A'}\n`;
-          marketMessage += `• Close: $${marketData.daily_data.close?.[marketData.daily_data.close.length - 1]?.toFixed(2) || 'N/A'}\n`;
-          marketMessage += `• Volume: ${marketData.daily_data.volume?.[marketData.daily_data.volume.length - 1]?.toLocaleString() || 'N/A'}\n\n`;
+        if (!response.market_context.current_data.price || !response.market_context.current_data.volume) {
+          throw new Error('Missing required market data fields')
         }
 
-        // Technical Indicators
-        if (marketData?.technical_indicators) {
-          const tech = marketData.technical_indicators;
-          marketMessage += `Technical Indicators:\n`;
-
-          // Trend Indicators
-          if (tech.trend) {
-            marketMessage += `• SMA 20: ${tech.trend.sma_20?.[tech.trend.sma_20.length - 1]?.toFixed(2) || 'N/A'}\n`;
-            marketMessage += `• SMA 50: ${tech.trend.sma_50?.[tech.trend.sma_50.length - 1]?.toFixed(2) || 'N/A'}\n`;
-            marketMessage += `• EMA 20: ${tech.trend.ema_20?.[tech.trend.ema_20.length - 1]?.toFixed(2) || 'N/A'}\n`;
-            marketMessage += `• Trend Strength: ${tech.trend.trend_strength?.toFixed(2) || 'N/A'}%\n`;
-          }
-
-          // Momentum Indicators
-          if (tech.momentum) {
-            marketMessage += `• RSI: ${tech.momentum.rsi?.[tech.momentum.rsi.length - 1]?.toFixed(1) || 'N/A'}\n`;
-            if (tech.momentum.macd) {
-              marketMessage += `• MACD: ${tech.momentum.macd.macd_line?.[tech.momentum.macd.macd_line.length - 1]?.toFixed(2) || 'N/A'}\n`;
-              marketMessage += `• MACD Signal: ${tech.momentum.macd.signal_line?.[tech.momentum.macd.signal_line.length - 1]?.toFixed(2) || 'N/A'}\n`;
-              marketMessage += `• MACD Histogram: ${tech.momentum.macd.histogram?.[tech.momentum.macd.histogram.length - 1]?.toFixed(2) || 'N/A'}\n`;
-            }
-          }
-
-          // Volatility Indicators
-          if (tech.volatility?.bollinger_bands) {
-            const bb = tech.volatility.bollinger_bands;
-            marketMessage += `• BB Upper: ${bb.upper?.[bb.upper.length - 1]?.toFixed(2) || 'N/A'}\n`;
-            marketMessage += `• BB Middle: ${bb.middle?.[bb.middle.length - 1]?.toFixed(2) || 'N/A'}\n`;
-            marketMessage += `• BB Lower: ${bb.lower?.[bb.lower.length - 1]?.toFixed(2) || 'N/A'}\n`;
-          }
+        if (!response.market_context.daily_data.dates || !response.market_context.daily_data.prices || !response.market_context.daily_data.volumes) {
+          throw new Error('Invalid daily data structure received from server')
         }
 
-        marketMessage += `\nWhat would you like to analyze?`;
+        if (!response.options_context.contracts) {
+          throw new Error('Invalid options data structure received from server')
+        }
 
-        setMessages([{
+        console.log('Options Context:', response.options_context);
+        console.log('Options Contracts:', response.options_context.contracts);
+
+        // Validate array lengths
+        const { dates, prices, volumes } = response.market_context.daily_data
+        if (dates.length !== prices.length || dates.length !== volumes.length) {
+          throw new Error('Mismatched array lengths in daily data')
+        }
+
+        if (dates.length === 0) {
+          throw new Error('No historical data available')
+        }
+
+        actions.setContext({
+          market: response.market_context,
+          knowledge: {
+            ...response.options_context,
+            current_price: response.market_context.current_data.price
+          }
+        })
+        console.log('Context after setting:', {
+          market: response.market_context,
+          knowledge: {
+            ...response.options_context,
+            current_price: response.market_context.current_data.price
+          }
+        });
+
+        actions.addMessage({
+          id: 'initial',
           role: 'assistant',
-          content: marketMessage,
-          timestamp: new Date()
-        }]);
-      } catch (error) {
-        setMessages([{
-          role: 'assistant',
-          content: `Error: ${error instanceof Error ? error.message : 'Failed to initialize ticker'}. Please make sure the backend server is running.`,
-          timestamp: new Date()
-        }]);
+          content: `How can I help you analyze ${symbol}? I can provide insights on:
+- Options strategies
+- Technical analysis
+- Market sentiment
+- Risk assessment`,
+          timestamp: Date.now(),
+          marketContext: response.market_context,
+          knowledgeContext: response.options_context
+        })
+      } else {
+        setError(response.message || 'Failed to load market data')
       }
-    };
+    } catch (error) {
+      if (mountedRef.current) {
+        if (error instanceof Error) {
+          if (error.name === 'AbortError') {
+            // Request was aborted, do nothing
+            return
+          }
+          setError(error.message || 'Failed to initialize ticker')
+        } else {
+          setError('An unexpected error occurred')
+        }
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false)
+      }
+    }
+  }
 
-    initializeTicker();
-  }, [symbol]);
+  useEffect(() => {
+    mountedRef.current = true
+    abortControllerRef.current?.abort() // Abort any existing request
+    abortControllerRef.current = new AbortController()
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
+    initialize()
 
-    const userMessage: Message = {
-      role: 'user',
-      content: input,
-      timestamp: new Date()
-    };
+    return () => {
+      mountedRef.current = false
+      abortControllerRef.current?.abort()
+    }
+  }, [symbol, actions])
 
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setLoading(true);
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isQuerying) return
+
+    const userMessage = inputValue.trim()
+    setInputValue('')
+    setIsQuerying(true)
 
     try {
-      const data = await api.query({
-        symbol,
-        query: input
-      });
+      actions.addMessage({
+        id: Date.now().toString(),
+        role: 'user',
+        content: userMessage,
+        timestamp: Date.now()
+      })
 
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: data.response,
-        timestamp: new Date()
-      }]);
+      const response = await query(userMessage, symbol)
+
+      if (response.status === 'success') {
+        actions.addMessage({
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: response.response,
+          timestamp: Date.now(),
+          marketContext: response.market_context,
+          knowledgeContext: response.knowledge_context
+        })
+      } else {
+        actions.addMessage({
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: 'I apologize, but I encountered an error processing your request. Please try again.',
+          timestamp: Date.now()
+        })
+      }
     } catch (error) {
-      setMessages(prev => [...prev, {
+      console.error('Error sending message:', error)
+      actions.addMessage({
+        id: Date.now().toString(),
         role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to send message'}. Please make sure the backend server is running.`,
-        timestamp: new Date()
-      }]);
+        content: 'I apologize, but I encountered an error processing your request. Please try again.',
+        timestamp: Date.now()
+      })
+    } finally {
+      setIsQuerying(false)
     }
-    setLoading(false);
-  };
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wizard-background relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-wizard-green/5 to-wizard-blue/5" />
+        <div className="relative text-center space-y-8">
+          <div className="flex items-center justify-center gap-6">
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '0ms' }} />
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '150ms' }} />
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '300ms' }} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-wizard-green to-wizard-blue bg-clip-text text-transparent mb-2">
+              Analyzing {symbol.toUpperCase()}
+            </h2>
+            <p className="text-wizard-text-secondary text-lg">Fetching market data and options chains...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wizard-background">
+        <div className="glass-panel p-8 max-w-md w-full text-center space-y-4">
+          <div className="w-16 h-16 bg-wizard-red/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-wizard-red" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-wizard-text-primary">Error Loading Data</h2>
+          <p className="text-wizard-red">{error}</p>
+          <button
+            onClick={() => {
+              setError(null)
+              setLoading(true)
+              initialize()
+            }}
+            className="mt-4 px-6 py-2 bg-wizard-surface hover:bg-wizard-surface/80 text-wizard-text-primary rounded-lg transition-colors duration-200"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!context?.market?.current_data || !context?.knowledge) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wizard-background relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-wizard-green/5 to-wizard-blue/5" />
+        <div className="relative text-center space-y-8">
+          <div className="flex items-center justify-center gap-6">
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '0ms' }} />
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '150ms' }} />
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '300ms' }} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-wizard-green to-wizard-blue bg-clip-text text-transparent mb-2">
+              Loading Market Data
+            </h2>
+            <p className="text-wizard-text-secondary text-lg">Fetching real-time market data and options chains...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const { market: marketContext, knowledge: knowledgeContext } = context
+
+  // Ensure we have the required data before rendering
+  if (!marketContext?.daily_data?.dates?.length || !marketContext?.daily_data?.prices?.length || !marketContext?.daily_data?.volumes?.length) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-wizard-background relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-wizard-green/5 to-wizard-blue/5" />
+        <div className="relative text-center space-y-8">
+          <div className="flex items-center justify-center gap-6">
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '0ms' }} />
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '150ms' }} />
+            <div className="w-5 h-5 bg-gradient-to-br from-wizard-green to-wizard-blue rounded-full animate-bounce shadow-lg shadow-wizard-green/20" style={{ animationDelay: '300ms' }} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-wizard-green to-wizard-blue bg-clip-text text-transparent mb-2">
+              Processing Market Data
+            </h2>
+            <p className="text-wizard-text-secondary text-lg">Preparing charts and analysis...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <main className="min-h-screen bg-[#0A1512] text-white">
-      {/* Gradient Background */}
-      <div className="absolute inset-0 bg-gradient-radial from-[#132320] to-transparent opacity-50 z-0" />
-
-      {/* Floating Elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(30)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-[#00ff9d] rounded-full animate-float"
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 5}s`,
-              animationDuration: `${5 + Math.random() * 5}s`
-            }}
-          />
-        ))}
-      </div>
+    <div className="flex flex-col h-screen bg-wizard-background relative">
+      <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-10 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-br from-wizard-green/5 to-wizard-blue/5 pointer-events-none" />
 
       {/* Main Content */}
-      <div className="relative z-10 max-w-7xl mx-auto px-6 py-24">
-        {/* Connection Status */}
-        {connectionError && (
-          <div className="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300">
-            {connectionError}
-          </div>
-        )}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 relative">
+        <div className="max-w-7xl mx-auto w-full">
+          {marketContext && <TickerHeader marketContext={marketContext} />}
 
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold wizard-gradient mb-2">
-            Analyzing {symbol}
-          </h1>
-          <p className="text-[#4D6B5D]">
-            Ask me anything about {symbol}'s options, technicals, or fundamentals
-          </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+            <div className="glass-panel p-6 hover:shadow-lg hover:shadow-wizard-green/5 transition-all duration-300">
+              <PriceChart
+                dailyData={marketContext.daily_data}
+                symbol={symbol}
+              />
+            </div>
+            <div className="glass-panel p-6 hover:shadow-lg hover:shadow-wizard-blue/5 transition-all duration-300">
+              <MarketSummary
+                dailyData={marketContext.daily_data}
+                currentData={marketContext.current_data}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+            <div className="glass-panel p-6 hover:shadow-lg hover:shadow-wizard-green/5 transition-all duration-300">
+              <h3 className="text-xl font-semibold text-wizard-text-primary mb-6 flex items-center">
+                <span className="w-2 h-2 bg-wizard-green rounded-full mr-2"></span>
+                Calls
+              </h3>
+              {knowledgeContext && <OptionsDisplay optionsData={knowledgeContext} type="calls" />}
+            </div>
+            <div className="glass-panel p-6 hover:shadow-lg hover:shadow-wizard-red/5 transition-all duration-300">
+              <h3 className="text-xl font-semibold text-wizard-text-primary mb-6 flex items-center">
+                <span className="w-2 h-2 bg-wizard-red rounded-full mr-2"></span>
+                Puts
+              </h3>
+              {knowledgeContext && <OptionsDisplay optionsData={knowledgeContext} type="puts" />}
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* Chat Interface */}
-        <div className="flex flex-col h-[calc(100vh-300px)]">
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto space-y-6 mb-6">
-            {messages.map((message, index) => (
-              <ChatMessage key={index} message={message} />
-            ))}
-            {loading && (
-              <div className="flex items-start gap-6">
-                <div className="w-10 h-10 rounded-xl bg-[#0A2518] flex items-center justify-center flex-shrink-0">
-                  <span className="text-[#00ff9d]">R</span>
+      {/* Chat Section */}
+      <div className="border-t border-wizard-border bg-wizard-background/50 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="glass-panel p-6">
+            <div className="space-y-4 max-h-[300px] overflow-y-auto mb-6 pr-4 scrollbar-thin scrollbar-thumb-wizard-border scrollbar-track-transparent">
+              {messages.map((message: Message) => (
+                <div
+                  key={message.id}
+                  className={`p-4 rounded-xl transition-all duration-300 ${message.role === 'user'
+                    ? 'bg-wizard-background/80 border border-wizard-border'
+                    : 'bg-gradient-to-r from-wizard-surface to-wizard-surface/80'
+                    }`}
+                >
+                  <div className="text-wizard-text-primary">{message.content}</div>
                 </div>
-                <div className="glass-card rounded-2xl p-6 bg-[#0A2518]/50">
-                  <div className="flex space-x-2">
-                    <div className="w-2 h-2 bg-[#00ff9d] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 bg-[#00ff9d] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 bg-[#00ff9d] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input Form */}
-          <form onSubmit={handleSendMessage} className="glass-card rounded-2xl p-4">
+              ))}
+            </div>
             <div className="flex gap-4">
               <input
                 type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about options, technicals, or fundamentals..."
-                className="input-field flex-1"
-                disabled={!!connectionError}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Ask about market trends, options strategies, or technical analysis..."
+                className="flex-1 bg-wizard-background/80 text-wizard-text-primary rounded-xl px-6 py-3 border border-wizard-border focus:outline-none focus:border-wizard-green focus:ring-2 focus:ring-wizard-green/20 transition-all duration-300"
               />
               <button
-                type="submit"
-                disabled={loading || !!connectionError}
-                className="wizard-button self-stretch"
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim() || isQuerying}
+                className={`px-8 py-3 bg-gradient-to-r from-wizard-green to-wizard-blue text-white rounded-xl hover:opacity-90 transition-all duration-300 font-medium shadow-lg shadow-wizard-green/20 ${(!inputValue.trim() || isQuerying) ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
               >
-                Send
+                {isQuerying ? 'Sending...' : 'Send'}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       </div>
-    </main>
+    </div>
   )
 } 

@@ -11,7 +11,10 @@ const ARCHITECTURE_SECTIONS = [
           "Real-time WebSocket integration for market data",
           "TailwindCSS for responsive design",
           "Custom hooks for state management",
-          "TypeScript for type safety"
+          "TypeScript for type safety",
+          "Component-based architecture with reusable UI elements",
+          "Optimized data fetching with React Query",
+          "Real-time charting with Chart.js"
         ]
       },
       {
@@ -21,7 +24,10 @@ const ARCHITECTURE_SECTIONS = [
           "WebSocket server for real-time data streaming",
           "RESTful API endpoints for market data",
           "Redis for caching and pub/sub",
-          "PostgreSQL for persistent storage"
+          "PostgreSQL for persistent storage",
+          "Custom middleware for authentication",
+          "Rate limiting and request validation",
+          "Background task processing"
         ]
       },
       {
@@ -30,32 +36,143 @@ const ARCHITECTURE_SECTIONS = [
           "Large Language Model API integration",
           "Market sentiment analysis pipeline",
           "Technical indicator calculation engine",
-          "Real-time strategy optimization"
+          "Real-time strategy optimization",
+          "Document processing and embedding generation",
+          "Vector similarity search",
+          "Context-aware response generation",
+          "Model fine-tuning capabilities"
         ]
       }
     ]
   },
   {
-    title: "Data Flow",
+    title: "Google Cloud GPU Implementation",
     content: [
       {
-        subtitle: "Market Data Pipeline",
+        subtitle: "GPU Infrastructure",
         details: [
-          "Real-time market data ingestion",
-          "Options chain processing",
-          "Greeks calculation engine",
-          "Technical indicator computation",
-          "WebSocket broadcasting"
+          "NVIDIA T4 GPU with 16GB VRAM",
+          "Docker containerization with GPU passthrough",
+          "Auto-scaling based on workload",
+          "Cost optimization with spot instances",
+          "CUDA acceleration for ML tasks",
+          "Distributed training capabilities",
+          "Model serving optimization",
+          "Resource monitoring and management"
         ]
       },
       {
-        subtitle: "Analysis Pipeline",
+        subtitle: "Performance Optimization",
         details: [
-          "Historical data processing",
-          "Volatility surface modeling",
-          "Options strategy analysis",
-          "Risk metrics calculation",
-          "Position management system"
+          "~50ms inference speed per prediction",
+          "Up to 1000 samples/second batch processing",
+          "Optimized memory usage for 16GB VRAM",
+          "Efficient model loading and caching",
+          "Parallel processing capabilities",
+          "Load balancing across GPU instances",
+          "Automatic failover and recovery",
+          "Resource utilization monitoring"
+        ]
+      },
+      {
+        subtitle: "Cost Management",
+        details: [
+          "~$0.45/hour for T4 instance",
+          "Spot instance utilization for non-critical workloads",
+          "Automatic scaling based on demand",
+          "Resource allocation optimization",
+          "Cost monitoring and alerts",
+          "Usage analytics and reporting",
+          "Budget management tools",
+          "Cost-effective deployment strategies"
+        ]
+      }
+    ]
+  },
+  {
+    title: "Frontend Architecture",
+    content: [
+      {
+        subtitle: "Component Structure",
+        details: [
+          "Modular component design",
+          "Reusable UI components",
+          "Custom hooks for business logic",
+          "Context providers for state management",
+          "Error boundary implementation",
+          "Loading state handling",
+          "Responsive design patterns",
+          "Accessibility compliance"
+        ]
+      },
+      {
+        subtitle: "Data Management",
+        details: [
+          "WebSocket integration for real-time updates",
+          "Local state management with Context API",
+          "Server-side data fetching",
+          "Client-side caching strategies",
+          "Optimistic UI updates",
+          "Error handling and recovery",
+          "Data validation and sanitization",
+          "Performance monitoring"
+        ]
+      },
+      {
+        subtitle: "UI/UX Features",
+        details: [
+          "Real-time market data visualization",
+          "Interactive charts and graphs",
+          "Customizable dashboard layouts",
+          "Responsive design for all devices",
+          "Dark/light mode support",
+          "Accessibility features",
+          "Loading states and animations",
+          "Error handling and user feedback"
+        ]
+      }
+    ]
+  },
+  {
+    title: "Backend Services",
+    content: [
+      {
+        subtitle: "Core Services",
+        details: [
+          "Market data ingestion and processing",
+          "Options chain analysis engine",
+          "Technical indicators calculation",
+          "AI model inference service",
+          "Document processing pipeline",
+          "Vector database management",
+          "WebSocket message handling",
+          "Authentication and authorization"
+        ]
+      },
+      {
+        subtitle: "Data Processing",
+        details: [
+          "Real-time data validation",
+          "Historical data analysis",
+          "Batch processing capabilities",
+          "Stream processing pipelines",
+          "Data transformation services",
+          "Cache management system",
+          "Data consistency checks",
+          "Error recovery mechanisms"
+        ]
+      },
+      {
+        subtitle: "API Endpoints",
+        details: [
+          "RESTful API design",
+          "WebSocket endpoints",
+          "GraphQL support",
+          "Rate limiting implementation",
+          "Request validation",
+          "Response formatting",
+          "Error handling",
+          "Documentation generation"
         ]
       }
     ]
@@ -70,7 +187,10 @@ const ARCHITECTURE_SECTIONS = [
           "TailwindCSS for styling",
           "TypeScript for type safety",
           "React Query for data fetching",
-          "D3.js for data visualization"
+          "D3.js for data visualization",
+          "Chart.js for interactive charts",
+          "WebSocket for real-time updates",
+          "Jest for testing"
         ]
       },
       {
@@ -80,7 +200,10 @@ const ARCHITECTURE_SECTIONS = [
           "PostgreSQL for data persistence",
           "Redis for caching",
           "Docker for containerization",
-          "Nginx for reverse proxy"
+          "Nginx for reverse proxy",
+          "Celery for task queues",
+          "Pytest for testing",
+          "Prometheus for monitoring"
         ]
       },
       {
@@ -88,9 +211,12 @@ const ARCHITECTURE_SECTIONS = [
         details: [
           "GitHub Actions for CI/CD",
           "Docker Compose for local development",
-          "AWS for cloud deployment",
+          "Google Cloud for deployment",
           "Prometheus for monitoring",
-          "Grafana for visualization"
+          "Grafana for visualization",
+          "Kubernetes for orchestration",
+          "Terraform for infrastructure",
+          "ELK stack for logging"
         ]
       }
     ]

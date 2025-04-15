@@ -1,6 +1,6 @@
 'use client'
 
-import { Message } from '@/lib/constants'
+import { Message } from '@/types'
 import { BlockMath, InlineMath } from 'react-katex'
 import 'katex/dist/katex.min.css'
 import ReactMarkdown from 'react-markdown'
@@ -53,7 +53,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           {renderContent(message.content)}
         </div>
         <div className="mt-2 text-xs text-[#4D6B5D]">
-          {message.timestamp.toLocaleTimeString()}
+          {new Date(message.timestamp).toLocaleTimeString()}
         </div>
       </div>
       {isUser && (

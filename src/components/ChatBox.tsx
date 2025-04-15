@@ -1,15 +1,10 @@
 import { useState, FormEvent } from 'react';
 import ChatMessage from './ChatMessage';
 import Loader from './Loader';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
+import { Message } from '@/types';
 
 interface ChatBoxProps {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: Message[];
   onSendMessage: (message: string) => void;
   loading?: boolean;
   placeholder?: string;
@@ -29,14 +24,10 @@ export default function ChatBox({ messages, onSendMessage, loading = false, plac
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto space-y-6 mb-6">
-        {messages.map((message, index) => (
+        {messages.map((message) => (
           <ChatMessage
-            key={index}
-            message={{
-              role: message.role,
-              content: message.content,
-              timestamp: new Date()
-            }}
+            key={message.id}
+            message={message}
           />
         ))}
         {loading && (

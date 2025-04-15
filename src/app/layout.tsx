@@ -1,15 +1,11 @@
 // app/layout.tsx
 import './globals.css'
-import { Inter } from 'next/font/google'
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-})
+import { GeistSans } from 'geist/font/sans'
+import { GeistMono } from 'geist/font/mono'
 
 export const metadata = {
-  title: 'Robin AI - Financial Assistant',
-  description: 'Your intelligent financial market assistant',
+  title: 'Robin - AI Trading Assistant',
+  description: 'Your intelligent companion for market analysis and trading insights',
 }
 
 export default function RootLayout({
@@ -18,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${inter.variable}`}>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="min-h-screen bg-wizard-background text-wizard-text-primary antialiased">
         {children}
       </body>
