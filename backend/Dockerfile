@@ -20,9 +20,11 @@ RUN mkdir -p /app/data/pdfs /app/model_cache /app/market_stream
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
+COPY market_stream/requirements.txt ./market_stream/
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies for both services
+RUN pip install --no-cache-dir -r requirements.txt && \
+  pip install --no-cache-dir -r market_stream/requirements.txt
 
 # Copy the rest of the application
 COPY . .
@@ -33,17 +35,21 @@ RUN chmod -R 755 /app/data && \
 
 # Set environment variables
 ENV PORT=8080
+ENV STREAM_PORT=8765
 ENV PYTHONUNBUFFERED=1
 
-# Health check
+# Health check for main API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
-# Expose the port
-EXPOSE 8080
+# Expose both ports
+EXPOSE 8080 8765
 
-# Run setup and start server
-CMD ["sh", "-c", "\
-  python rag/setup_pinecone.py && \
-  python rag/initialize_embeddings.py && \
-  uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info"]
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+  python -m uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info & \n\
+  python -m market_stream.main & \n\
+  wait' > /app/start.sh && chmod +x /app/start.sh
+
+# Run both services
+CMD ["/app/start.sh"]
