@@ -1,25 +1,15 @@
 steps:
-  # Pull the latest image for cache
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['pull', 'gcr.io/$PROJECT_ID/robin-backend:latest']
-    ignoreErrors: true
-
-  # Build the container image with cache
+  # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'build',
-      '--cache-from', 'gcr.io/$PROJECT_ID/robin-backend:latest',
-      '--build-arg', 'CACHE_BUST=$COMMIT_SHA',
       '-t', 'gcr.io/$PROJECT_ID/robin-backend:$COMMIT_SHA',
-      '-t', 'gcr.io/$PROJECT_ID/robin-backend:latest',
       '.'
     ]
 
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/robin-backend:$COMMIT_SHA']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/robin-backend:latest']
 
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -41,5 +31,4 @@ steps:
       - 'ALPACA_API_KEY=${_ALPACA_API_KEY},ALPACA_SECRET_KEY=${_ALPACA_SECRET_KEY},ALPACA_BASE_URL=${_ALPACA_BASE_URL},PINECONE_API_KEY=${_PINECONE_API_KEY},PINECONE_ENVIRONMENT=${_PINECONE_ENVIRONMENT},PINECONE_INDEX_NAME=${_PINECONE_INDEX_NAME},PINECONE_REALTIME_INDEX=${_PINECONE_REALTIME_INDEX},CORS_ORIGIN=${_CORS_ORIGIN}'
 
 images:
-  - 'gcr.io/$PROJECT_ID/robin-backend:$COMMIT_SHA'
-  - 'gcr.io/$PROJECT_ID/robin-backend:latest' 
+  - 'gcr.io/$PROJECT_ID/robin-backend:$COMMIT_SHA' 
