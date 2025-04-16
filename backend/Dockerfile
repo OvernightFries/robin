@@ -30,7 +30,8 @@ COPY requirements.txt .
 COPY market_stream/requirements.txt ./market_stream/
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
+RUN pip install --no-cache-dir redis==5.0.1 && \
+    pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r market_stream/requirements.txt
 
 # Copy application code

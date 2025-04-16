@@ -89,6 +89,17 @@ class QueryRequest(BaseModel):
 class InitializeTickerRequest(BaseModel):
     symbol: str
 
+@app.options("/initialize_ticker")
+async def initialize_ticker_options():
+    return {
+        "status": "ok",
+        "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*"
+        }
+    }
+
 @app.post("/initialize_ticker")
 async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
     """Initialize data for a new ticker symbol."""
