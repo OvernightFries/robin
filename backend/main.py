@@ -28,6 +28,13 @@ load_dotenv()
 
 app = FastAPI()
 
+# Add debug logging for route registration
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Application startup - registered routes:")
+    for route in app.routes:
+        logger.info(f"Route: {route.path} - Methods: {route.methods}")
+
 # Configure CORS
 origins = [
     "https://robin-gedk1azsy-overnightfries-projects.vercel.app",
@@ -85,6 +92,7 @@ class InitializeTickerRequest(BaseModel):
 @app.post("/initialize_ticker")
 async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
     """Initialize data for a new ticker symbol."""
+    logger.info("Received POST request to /initialize_ticker")
     symbol = request.symbol
     logger.info(f"Initializing data for symbol: {symbol}")
     
