@@ -29,7 +29,11 @@ load_dotenv()
 app = FastAPI()
 
 # Configure CORS
-origins = [os.getenv("CORS_ORIGIN", "*")]
+origins = [
+    "https://robin-gedk1azsy-overnightfries-projects.vercel.app",
+    "https://robin-khaki.vercel.app",
+    "http://localhost:3000"
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
