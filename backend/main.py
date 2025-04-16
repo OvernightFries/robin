@@ -35,6 +35,30 @@ async def startup_event():
     for route in app.routes:
         logger.info(f"Route: {route.path} - Methods: {route.methods}")
 
+# Add root endpoint
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "message": "API is running",
+        "endpoints": {
+            "health": "/health",
+            "initialize_ticker": "/initialize_ticker"
+        }
+    }
+
+# Add catch-all OPTIONS handler
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    return {
+        "status": "ok",
+        "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*"
+        }
+    }
+
 # Configure CORS
 origins = [
     "https://robin-gedk1azsy-overnightfries-projects.vercel.app",
