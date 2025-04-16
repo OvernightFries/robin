@@ -35,6 +35,7 @@ class OptionsData:
         self.symbol = symbol.upper()
         self.api_key = api_key or API_KEY
         self.api_secret = api_secret or API_SECRET
+        self.base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets/v2")
         self.headers = {
             "APCA-API-KEY-ID": self.api_key,
             "APCA-API-SECRET-KEY": self.api_secret,

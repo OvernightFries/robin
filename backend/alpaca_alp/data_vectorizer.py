@@ -18,7 +18,7 @@ class FinancialDataVectorizer:
         
         # Initialize Pinecone
         self.api_key = os.getenv("PINECONE_API_KEY")
-        # Use a different env var for real-time index to avoid conflicts with PDF index
+        # Use the real-time index name from env
         self.index_name = os.getenv("PINECONE_REALTIME_INDEX", "real-time-vectorization")
         
         # Initialize Pinecone client
@@ -32,7 +32,7 @@ class FinancialDataVectorizer:
                 metric='cosine',
                 spec=ServerlessSpec(
                     cloud='aws',
-                    region='us-west-2'
+                    region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
                 )
             )
             

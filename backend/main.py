@@ -29,9 +29,10 @@ load_dotenv()
 app = FastAPI()
 
 # Configure CORS
+origins = [os.getenv("CORS_ORIGIN", "*")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,7 +40,7 @@ app.add_middleware(
 
 # Initialize Pinecone
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index_name = os.getenv("PINECONE_INDEX_NAME", "robin-ai")
+index_name = os.getenv("PINECONE_INDEX_NAME", "robindocs")  # Using PINECONE_INDEX_NAME from .env
 
 # Check if index exists
 if index_name not in pc.list_indexes().names():
@@ -50,7 +51,7 @@ if index_name not in pc.list_indexes().names():
         metric='cosine',
         spec=ServerlessSpec(
             cloud='aws',
-            region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
+            region=os.getenv("PINECONE_ENVIRONMENT")
         )
     )
 
@@ -158,7 +159,7 @@ async def health_check():
             
         # Check Pinecone connection
         pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-        index_name = os.getenv("PINECONE_INDEX_NAME", "robin-ai")
+        index_name = os.getenv("PINECONE_INDEX_NAME")  # Using PINECONE_INDEX_NAME
         if index_name not in pc.list_indexes().names():
             raise Exception("Pinecone index not found")
             
@@ -177,4 +178,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

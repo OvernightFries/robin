@@ -9,7 +9,10 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/$1"
+      "dest": "/"
     }
-  ]
+  ],
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://robin-backend-xxxxx-uc.a.run.app"
+  }
 }

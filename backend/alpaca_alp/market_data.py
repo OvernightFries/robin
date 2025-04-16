@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class MarketData:
     def __init__(self, symbol: str, api_key: str = None, secret_key: str = None):
+        """Initialize the MarketData instance."""
         self.symbol = symbol.upper()
         self.api_key = api_key or os.getenv("ALPACA_API_KEY")
         self.secret_key = secret_key or os.getenv("ALPACA_SECRET_KEY")
@@ -25,7 +26,7 @@ class MarketData:
         self.api = tradeapi.REST(
             self.api_key,
             self.secret_key,
-            base_url='https://paper-api.alpaca.markets'
+            base_url=os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets/v2")
         )
         
     async def get_market_data(self) -> Dict[str, Any]:
