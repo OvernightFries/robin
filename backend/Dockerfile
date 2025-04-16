@@ -1,11 +1,12 @@
-# Build stage
-FROM python:3.11-slim as builder
-
-# Add build arguments for cache busting
-ARG CACHE_BUST=1
-ARG PIP_CACHE_DIR=/root/.cache/pip
+FROM python:3.11-slim
 
 WORKDIR /app
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    PORT=8080 \
+    STREAM_PORT=8765 \
+    PYTHONUNBUFFERED=1
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -20,35 +21,20 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
-COPY market_stream/requirements.txt ./market_stream/
-
-# Install Python dependencies with cache
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r market_stream/requirements.txt
-
-# Runtime stage
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Copy only necessary files from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
 # Create necessary directories
 RUN mkdir -p /app/data/pdfs /app/model_cache /app/market_stream && \
     chmod -R 755 /app/data /app/model_cache
 
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+COPY market_stream/requirements.txt ./market_stream/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r market_stream/requirements.txt
+
 # Copy application code
 COPY . .
-
-# Set environment variables
-ENV PORT=8080 \
-    STREAM_PORT=8765 \
-    PYTHONUNBUFFERED=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
