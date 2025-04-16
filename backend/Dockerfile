@@ -46,10 +46,12 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8080 8765
 
 # Create a startup script
-RUN echo '#!/bin/bash\n\
-  uvicorn backend.main:app --host 0.0.0.0 --port 8080 --log-level info &
-  python -m market_stream.main & \n\
-  wait' > /app/start.sh && chmod +x /app/start.sh
+RUN echo '#!/bin/bash' > /app/start.sh && \
+    echo 'uvicorn backend.main:app --host 0.0.0.0 --port 8080 --log-level info &' >> /app/start.sh && \
+    echo 'python -m market_stream.main &' >> /app/start.sh && \
+    echo 'wait' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
 
 # Run both services
 CMD ["/app/start.sh"]
