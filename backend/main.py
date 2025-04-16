@@ -38,7 +38,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],
     expose_headers=["*"],
     max_age=600
@@ -81,10 +81,6 @@ class QueryRequest(BaseModel):
 
 class InitializeTickerRequest(BaseModel):
     symbol: str
-
-@app.options("/initialize_ticker")
-async def initialize_ticker_options():
-    return {"status": "ok"}
 
 @app.post("/initialize_ticker")
 async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
