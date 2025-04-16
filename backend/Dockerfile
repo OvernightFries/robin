@@ -1,6 +1,10 @@
 # Build stage
 FROM python:3.11-slim as builder
 
+# Add build arguments for cache busting
+ARG CACHE_BUST=1
+ARG PIP_CACHE_DIR=/root/.cache/pip
+
 WORKDIR /app
 
 # Install build dependencies
@@ -20,8 +24,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 COPY market_stream/requirements.txt ./market_stream/
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
+# Install Python dependencies with cache
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r market_stream/requirements.txt
 
 # Runtime stage
