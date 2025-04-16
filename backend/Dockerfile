@@ -47,7 +47,7 @@ EXPOSE 8080 8765
 
 # Create a startup script
 RUN echo '#!/bin/bash\n\
-  python -m uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info & \n\
+  uvicorn backend.main:app --host 0.0.0.0 --port 8080 --log-level info &
   python -m market_stream.main & \n\
   wait' > /app/start.sh && chmod +x /app/start.sh
 
