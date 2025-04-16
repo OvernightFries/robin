@@ -1,7 +1,8 @@
 steps:
   # Pull the latest image for cache
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['pull', 'gcr.io/$PROJECT_ID/robin-backend:latest'] || true
+    args: ['pull', 'gcr.io/$PROJECT_ID/robin-backend:latest']
+    ignoreErrors: true
 
   # Build the container image with cache
   - name: 'gcr.io/cloud-builders/docker'
