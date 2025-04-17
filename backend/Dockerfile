@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     gcc \
     g++ \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories
@@ -44,11 +45,25 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Expose ports
 EXPOSE 8080 8765
 
-# Create and set up startup script
-RUN echo '#!/bin/bash\n\
-cd /app && uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info &\n\
-python -m market_stream.main &\n\
-wait' > /app/start.sh && chmod +x /app/start.sh
+# Create supervisor configuration
+RUN echo '[supervisord]\n\
+    nodaemon=true\n\
+    \n\
+    [program:api]\n\
+    command=uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info\n\
+    directory=/app\n\
+    stdout_logfile=/dev/stdout\n\
+    stdout_logfile_maxbytes=0\n\
+    stderr_logfile=/dev/stderr\n\
+    stderr_logfile_maxbytes=0\n\
+    \n\
+    [program:market_stream]\n\
+    command=python -m market_stream.main\n\
+    directory=/app\n\
+    stdout_logfile=/dev/stdout\n\
+    stdout_logfile_maxbytes=0\n\
+    stderr_logfile=/dev/stderr\n\
+    stderr_logfile_maxbytes=0' > /etc/supervisor/conf.d/services.conf
 
-# Run the application
-CMD ["/app/start.sh"]
+# Run the application using supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/services.conf"]
