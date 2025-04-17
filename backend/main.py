@@ -52,13 +52,14 @@ origins = [
     "https://robin-gedk1azsy-overnightfries-projects.vercel.app",
     "https://robin-khaki.vercel.app",
     "http://localhost:3000",
-    "https://robin-463504869309.us-central1.run.app"  # Added new domain
+    "https://robin-463504869309.us-central1.run.app"
 ]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
+    allow_methods=["GET", "POST", "OPTIONS"],  # Explicitly list allowed methods
     allow_headers=["*"],
     expose_headers=["*"],
     max_age=600
@@ -101,17 +102,6 @@ class QueryRequest(BaseModel):
 
 class InitializeTickerRequest(BaseModel):
     symbol: str
-
-@app.options("/initialize_ticker")
-async def initialize_ticker_options():
-    return {
-        "status": "ok",
-        "headers": {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "*"
-        }
-    }
 
 @app.post("/initialize_ticker")
 async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
