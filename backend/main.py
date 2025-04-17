@@ -47,23 +47,12 @@ async def root():
         }
     }
 
-# Add catch-all OPTIONS handler
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    return {
-        "status": "ok",
-        "headers": {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "*"
-        }
-    }
-
 # Configure CORS
 origins = [
     "https://robin-gedk1azsy-overnightfries-projects.vercel.app",
     "https://robin-khaki.vercel.app",
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "https://robin-463504869309.us-central1.run.app"  # Added new domain
 ]
 app.add_middleware(
     CORSMiddleware,
