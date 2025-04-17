@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 from pinecone import Pinecone
 from pinecone.core.client.api_client import ApiClient
 from pinecone.core.client.models import CreateIndexRequest, ServerlessSpec
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 # Configure logging
 logging.basicConfig(
@@ -49,7 +51,6 @@ async def root():
 
 # Configure CORS
 origins = [
-    "https://robin-gedk1azsy-overnightfries-projects.vercel.app",
     "https://robin-khaki.vercel.app",
     "http://localhost:3000",
     "https://robin-463504869309.us-central1.run.app"
@@ -59,11 +60,19 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],  # Explicitly list allowed methods
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
     expose_headers=["*"],
     max_age=600
 )
+
+# Add middleware to log all requests
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Request: {request.method} {request.url.path}")
+    response = await call_next(request)
+    logger.info(f"Response: {response.status_code}")
+    return response
 
 # Initialize Pinecone
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -103,6 +112,19 @@ class QueryRequest(BaseModel):
 class InitializeTickerRequest(BaseModel):
     symbol: str
 
+@app.options("/initialize_ticker")
+async def initialize_ticker_options():
+    logger.info("Handling OPTIONS request for /initialize_ticker")
+    response = JSONResponse(
+        content={"status": "ok", "message": "CORS preflight request handled"},
+        status_code=200
+    )
+    response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
+
 @app.post("/initialize_ticker")
 async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
     """Initialize data for a new ticker symbol."""
@@ -125,12 +147,19 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
         # Format context for RAG
         formatted_context = market_data.format_for_rag(market_context)
         
-        return {
-            "status": "success",
-            "message": f"Data initialized for {symbol}",
-            "market_context": market_context,
-            "options_context": options_context
-        }
+        response = JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Data initialized for {symbol}",
+                "market_context": market_context,
+                "options_context": options_context
+            },
+            status_code=200
+        )
+        response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
+        
+        logger.info(f"Successfully initialized ticker {symbol}")
+        return response
         
     except Exception as e:
         logger.error(f"Error initializing ticker data: {str(e)}")
