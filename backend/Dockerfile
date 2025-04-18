@@ -41,6 +41,12 @@ RUN python -c "from sentence_transformers import SentenceTransformer; model = Se
 # Copy application code
 COPY . .
 
+# Create a simple startup script
+RUN echo '#!/bin/bash\n\
+    echo "Starting application..."\n\
+    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info\n\
+    ' > /app/start.sh && chmod +x /app/start.sh
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
@@ -49,4 +55,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8080
 
 # Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]
+CMD ["/app/start.sh"]
