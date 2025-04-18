@@ -22,15 +22,39 @@ app = FastAPI()
 # Initialize Redis with retry logic
 redis_client = None
 try:
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-    redis_client = Redis.from_url(
-        redis_url,
-        socket_timeout=5,
-        socket_connect_timeout=5,
-        retry_on_timeout=True,
-        decode_responses=True
-    )
-    # Test connection
+    # Get Redis connection details from environment variables
+    redis_host = os.getenv("REDIS_HOST", "localhost")  # Default to localhost for local development
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
+    redis_password = os.getenv("REDIS_PASSWORD")  # Optional for local development
+    
+    # Determine if we're using Memorystore (production) or local Redis
+    is_memorystore = redis_host != "localhost" and redis_host != "127.0.0.1"
+    
+    if is_memorystore:
+        # Google Cloud Memorystore configuration
+        redis_client = Redis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password,
+            ssl=True,  # Memorystore requires SSL
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            retry_on_timeout=True
+        )
+        logger.info("Connecting to Google Cloud Memorystore")
+    else:
+        # Local Redis configuration
+        redis_client = Redis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            retry_on_timeout=True
+        )
+        logger.info("Connecting to local Redis")
+    
+    # Test the connection
     redis_client.ping()
     logger.info("Redis connection established")
 except Exception as e:
