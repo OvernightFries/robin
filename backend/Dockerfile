@@ -55,14 +55,25 @@ RUN echo '#!/bin/bash\n\
     set -e\n\
     echo "Starting application..."\n\
     \n\
-    # Start the FastAPI server\n\
+    # Start the FastAPI server in the background\n\
     echo "Starting FastAPI server..."\n\
-    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info\n\
+    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info &\n\
+    \n\
+    # Wait for the server to be ready using curl\n\
+    until curl -s http://:8080/health > /dev/null; do\n\
+    echo "Waiting for server to be ready..."\n\
+    sleep 1\n\
+    done\n\
+    \n\
+    echo "Server is ready!"\n\
+    \n\
+    # Keep the container running\n\
+    wait\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
 # Health check with longer timeout
-HEALTHCHECK --interval=30s --timeout=30s --start-period=300s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+HEALTHCHECK --interval=30s --timeout=60s --start-period=600s --retries=3 \
+    CMD curl -f http://:8080/health || exit 1
 
 # Expose port
 EXPOSE 8080
