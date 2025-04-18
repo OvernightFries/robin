@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class FinancialDataVectorizer:
     def __init__(self):
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
         
         # Initialize Pinecone
         self.api_key = os.getenv("PINECONE_API_KEY")

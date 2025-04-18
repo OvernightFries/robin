@@ -11,13 +11,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HF_HOME=/app/model_cache \
     PYTHONPATH=/app
 
-# Create model cache directory
-RUN mkdir -p /app/model_cache
-
-# Download the model FIRST - fail fast if it doesn't work
-RUN pip install --no-cache-dir sentence-transformers && \
-    python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -29,7 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     gcc \
     g++ \
+    netcat-traditional \
     && rm -rf /var/lib/apt/lists/*
+
+# Create model cache directory
+RUN mkdir -p /app/model_cache
 
 # Create necessary directories
 RUN mkdir -p /app/data/pdfs && \
@@ -44,44 +41,27 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r market_stream/requirements.txt && \
     pip install --no-cache-dir huggingface_hub[hf_xet]
 
+# Download and verify the model
+RUN python -c "from sentence_transformers import SentenceTransformer; \
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
+    print('Model loaded successfully'); \
+    print(f'Model path: {model.model_path}'); \
+    print(f'Model device: {model.device}')"
+
 # Copy application code
 COPY . .
 
-# Create a robust startup script with error handling
+# Create a simple startup script
 RUN echo '#!/bin/bash\n\
     set -e\n\
     echo "Starting application..."\n\
     \n\
-    # Function to check if port is available\n\
-    check_port() {\n\
-    while ! nc -z localhost 8080; do\n\
-    echo "Waiting for port 8080..."\n\
-    sleep 1\n\
-    done\n\
-    }\n\
-    \n\
-    # Start the FastAPI server in the background\n\
+    # Start the FastAPI server\n\
     echo "Starting FastAPI server..."\n\
-    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info &\n\
-    \n\
-    # Wait for server to start\n\
-    check_port\n\
-    \n\
-    # Start model loading in background\n\
-    echo "Starting model loading..."\n\
-    python -c "from sentence_transformers import SentenceTransformer; \\\n\
-    print(\"Loading model...\"); \\\n\
-    model = SentenceTransformer(\"sentence-transformers/all-MiniLM-L6-v2\", cache_folder=\"/app/model_cache\"); \\\n\
-    print(\"Model loaded successfully\")" &\n\
-    \n\
-    # Keep the container running\n\
-    tail -f /dev/null\n\
+    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
-# Install netcat for port checking
-RUN apt-get update && apt-get install -y netcat-traditional && rm -rf /var/lib/apt/lists/*
-
-# Health check with longer timeout and better retry logic
+# Health check with longer timeout
 HEALTHCHECK --interval=30s --timeout=30s --start-period=300s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
