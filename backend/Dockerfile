@@ -1,4 +1,4 @@
-FROM python:3.11-slim as builder
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -39,52 +39,46 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 # Copy application code
 COPY . .
 
-# Pre-download and cache sentence-transformers models
+# Pre-download and cache sentence-transformers models during build
 RUN python -c "from sentence_transformers import SentenceTransformer; \
-    SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
-    SentenceTransformer('BAAI/bge-large-en-v1.5')"
+    print('Downloading models...'); \
+    SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', cache_folder='/app/model_cache'); \
+    SentenceTransformer('BAAI/bge-large-en-v1.5', cache_folder='/app/model_cache'); \
+    print('Models downloaded successfully')"
 
-# Test stage to verify the application can start
-FROM builder as tester
-WORKDIR /app
-
-# Install curl for testing
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Test if the application can start and listen on the port
-RUN echo '#!/bin/bash\n\
-    set -e\n\
-    echo "Testing application startup..."\n\
-    \n\
-    # Set required environment variables\n\
-    export REDIS_HOST=localhost\n\
-    export REDIS_PORT=6379\n\
-    export PINECONE_API_KEY=test-key\n\
-    \n\
-    echo "Starting FastAPI server..."\n\
-    python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --log-level debug\n\
-    ' > /app/test.sh && chmod +x /app/test.sh
-
-# Run the test
-RUN /app/test.sh
-
-# Final stage
-FROM builder
-WORKDIR /app
-
-# Create a simple startup script
+# Create a robust startup script with error handling
 RUN echo '#!/bin/bash\n\
     set -e\n\
     echo "Starting application..."\n\
-    exec python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --log-level info\n\
+    \n\
+    # Function to check if port is available\n\
+    check_port() {\n\
+    while ! nc -z localhost 8080; do\n\
+    echo "Waiting for port 8080..."\n\
+    sleep 1\n\
+    done\n\
+    }\n\
+    \n\
+    # Start the FastAPI server in the background\n\
+    echo "Starting FastAPI server..."\n\
+    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info &\n\
+    \n\
+    # Wait for server to start\n\
+    check_port\n\
+    \n\
+    # Keep the container running\n\
+    tail -f /dev/null\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
+# Install netcat for port checking
+RUN apt-get update && apt-get install -y netcat-traditional && rm -rf /var/lib/apt/lists/*
+
 # Health check with longer timeout and better retry logic
-HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
+HEALTHCHECK --interval=30s --timeout=30s --start-period=300s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Expose port
 EXPOSE 8080
 
-# Run the application
+# Run the application using the startup script
 CMD ["/app/start.sh"]
