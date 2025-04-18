@@ -35,6 +35,9 @@ load_dotenv()
 
 app = FastAPI()
 
+class InitializeTickerRequest(BaseModel):
+    symbol: str
+
 # Register all routes first
 @app.get("/")
 async def root():
