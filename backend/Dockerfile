@@ -68,4 +68,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=600s --retries=3 \
 EXPOSE 8080
 
 # Run the application using the startup script
-CMD ["/app/start.sh"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]
