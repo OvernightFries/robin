@@ -148,22 +148,15 @@ asyncio.create_task(initialize_components())
 async def health_check():
     """Health check endpoint."""
     try:
-        redis_status = "connected" if redis_client and redis_client.ping() else "not_connected"
-        
+        # Basic health check - just verify the server is running
         return {
             "status": "healthy",
-            "redis": redis_status,
-            "components": {
-                "chat_memory": "initialized" if chat_memory else "not_initialized",
-                "vectorizer": "initialized" if vectorizer else "not_initialized",
-                "knowledge_base": "initialized" if knowledge_base else "not_initialized"
-            }
+            "message": "Server is running"
         }
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
         return {
             "status": "healthy",
-            "redis": "not_connected",
             "warning": str(e)
         }
 

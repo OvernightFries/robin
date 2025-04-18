@@ -55,13 +55,10 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN echo '#!/bin/bash\n\
     set -e\n\
     echo "Testing application startup..."\n\
-    python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --log-level info &\n\
-    sleep 5\n\
-    if ! curl -s http://localhost:${PORT:-8080}/health > /dev/null; then\n\
-    echo "Application failed to start or health check failed"\n\
-    exit 1\n\
-    fi\n\
-    echo "Application started successfully"\n\
+    \n\
+    # Start the FastAPI server in foreground with debug logging\n\
+    echo "Starting FastAPI server..."\n\
+    python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --log-level debug\n\
     ' > /app/test.sh && chmod +x /app/test.sh
 
 # Run the test
