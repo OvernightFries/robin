@@ -42,7 +42,7 @@ async def init_redis():
                 host=redis_host,
                 port=redis_port,
                 password=redis_password,
-                ssl=True,  # Memorystore requires SSL
+                ssl=False,  # SSL not required for this instance
                 socket_timeout=10,  # Increased timeout
                 socket_connect_timeout=10,  # Increased timeout
                 retry_on_timeout=True,
