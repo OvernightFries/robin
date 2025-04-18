@@ -44,7 +44,7 @@ RUN mkdir -p /app/model_cache
 RUN echo 'import sys\n\
     from sentence_transformers import SentenceTransformer\n\
     import os\n\
-    try:\n\
+    \ntry:\n\
     print("Downloading model...")\n\
     model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")\n\
     print("Model downloaded successfully")\n\
