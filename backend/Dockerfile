@@ -50,30 +50,40 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 # Copy application code
 COPY . .
 
-# Create a simple startup script
+# Create a robust startup script with error handling
 RUN echo '#!/bin/bash\n\
     set -e\n\
     echo "Starting application..."\n\
+    \n\
+    # Function to check if port is available\n\
+    check_port() {\n\
+    while ! nc -z 0.0.0.0 8080; do\n\
+    echo "Waiting for port 8080..."\n\
+    sleep 1\n\
+    done\n\
+    }\n\
     \n\
     # Start the FastAPI server in the background\n\
     echo "Starting FastAPI server..."\n\
     uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info &\n\
     \n\
-    # Wait for the server to be ready using curl\n\
-    until curl -s http://:8080/health > /dev/null; do\n\
-    echo "Waiting for server to be ready..."\n\
-    sleep 1\n\
-    done\n\
+    # Wait for server to start\n\
+    check_port\n\
     \n\
-    echo "Server is ready!"\n\
+    # Start model loading in background\n\
+    echo "Starting model loading..."\n\
+    python -c "from sentence_transformers import SentenceTransformer; \\\n\
+    print(\"Loading model...\"); \\\n\
+    model = SentenceTransformer(\"sentence-transformers/all-MiniLM-L6-v2\", cache_folder=\"/app/model_cache\"); \\\n\
+    print(\"Model loaded successfully\")" &\n\
     \n\
     # Keep the container running\n\
-    wait\n\
+    tail -f /dev/null\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
-# Health check with longer timeout
-HEALTHCHECK --interval=30s --timeout=60s --start-period=600s --retries=3 \
-    CMD curl -f http://:8080/health || exit 1
+# Health check with longer timeout and better retry logic
+HEALTHCHECK --interval=30s --timeout=30s --start-period=300s --retries=3 \
+    CMD curl -f http://0.0.0.0:8080/health || exit 1
 
 # Expose port
 EXPOSE 8080
