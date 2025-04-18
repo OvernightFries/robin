@@ -41,31 +41,25 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r market_stream/requirements.txt && \
     pip install --no-cache-dir huggingface_hub[hf_xet]
 
-# Download and verify the model
+# Pre-load and cache the model during build
 RUN python -c "from sentence_transformers import SentenceTransformer; \
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
     embeddings = model.encode('This is a test sentence'); \
-    print('Model loaded and encoded successfully')"
+    print('Model loaded and cached successfully')" && \
+    # Verify the model is cached
+    ls -la /app/model_cache && \
+    # Set proper permissions
+    chmod -R 755 /app/model_cache
 
 # Copy application code
 COPY . .
 
-# Create a robust startup script with error handling
-RUN echo '#!/bin/bash\n\
-    set -e\n\
-    echo "Starting application..."\n\
-    \n\
-    # Start the FastAPI server\n\
-    echo "Starting FastAPI server..."\n\
-    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info\n\
-    ' > /app/start.sh && chmod +x /app/start.sh
-
-# Health check with longer timeout and better retry logic
-HEALTHCHECK --interval=30s --timeout=30s --start-period=600s --retries=3 \
+# Health check with more generous timeouts
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Expose port
 EXPOSE 8080
 
-# Run the application using the startup script
+# Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]

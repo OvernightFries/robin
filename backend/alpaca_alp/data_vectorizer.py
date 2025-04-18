@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 class FinancialDataVectorizer:
     def __init__(self):
-        self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        self.model = None  # Don't load model in init
+        self._model_loaded = False
         
         # Initialize Pinecone
         self.api_key = os.getenv("PINECONE_API_KEY")
@@ -38,6 +39,14 @@ class FinancialDataVectorizer:
             
         self.index = self.pc.Index(self.index_name)
     
+    def load_model(self):
+        """Load the model from cache"""
+        if not self._model_loaded:
+            logger.info("Loading sentence transformer model from cache...")
+            self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+            self._model_loaded = True
+            logger.info("Model loaded from cache successfully")
+    
     def process_options_data(self, contracts: List[Dict[Any, Any]]) -> List[str]:
         """Convert options contracts into text descriptions for embedding"""
         descriptions = []
@@ -57,6 +66,7 @@ class FinancialDataVectorizer:
     
     def vectorize_options(self, descriptions: List[str], metadata: List[Dict]):
         """Convert options descriptions to vectors and store in Pinecone"""
+        self.load_model()  # Ensure model is loaded
         embeddings = self.model.encode(descriptions)
         
         # Generate IDs for each embedding
@@ -157,7 +167,7 @@ class FinancialDataVectorizer:
         
         # Vectorize and store options data
         logger.info(f"Vectorizing {len(options_descriptions)} options contracts...")
-        self.vectorize_options(options_descriptions, options_metadata)
+        await self.vectorize_options(options_descriptions, options_metadata)
         
         # Show total vectors stored
         stats = self.index.describe_index_stats()
