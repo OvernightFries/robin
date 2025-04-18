@@ -57,10 +57,19 @@ RUN echo '#!/bin/bash\n\
     \n\
     # Function to check if port is available\n\
     check_port() {\n\
-    while ! nc -z 0.0.0.0 8080; do\n\
-    echo "Waiting for port 8080..."\n\
-    sleep 1\n\
+    local max_attempts=60\n\
+    local attempt=1\n\
+    while [ $attempt -le $max_attempts ]; do\n\
+    echo "Attempt $attempt: Waiting for server to be ready..."\n\
+    if nc -z localhost 8080; then\n\
+    echo "Server is ready!"\n\
+    return 0\n\
+    fi\n\
+    sleep 5\n\
+    attempt=$((attempt + 1))\n\
     done\n\
+    echo "Server failed to start after $max_attempts attempts"\n\
+    return 1\n\
     }\n\
     \n\
     # Start the FastAPI server in the background\n\
@@ -82,8 +91,8 @@ RUN echo '#!/bin/bash\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
 # Health check with longer timeout and better retry logic
-HEALTHCHECK --interval=30s --timeout=30s --start-period=300s --retries=3 \
-    CMD curl -f http://0.0.0.0:8080/health || exit 1
+HEALTHCHECK --interval=30s --timeout=30s --start-period=600s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Expose port
 EXPOSE 8080
