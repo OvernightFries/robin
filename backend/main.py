@@ -125,21 +125,31 @@ async def initialize_components():
     try:
         logger.info("Starting component initialization...")
         
-        # Initialize chat memory
-        chat_memory = ChatMemory(redis_client)
-        logger.info("Chat memory initialized")
+        # Initialize chat memory (optional)
+        try:
+            chat_memory = ChatMemory(redis_client)
+            logger.info("Chat memory initialized")
+        except Exception as e:
+            logger.warning(f"Chat memory initialization skipped: {str(e)}")
         
-        # Initialize vectorizer
-        vectorizer = FinancialDataVectorizer()
-        logger.info("Vectorizer initialized")
+        # Initialize vectorizer (optional)
+        try:
+            vectorizer = FinancialDataVectorizer()
+            logger.info("Vectorizer initialized")
+        except Exception as e:
+            logger.warning(f"Vectorizer initialization skipped: {str(e)}")
         
-        # Initialize knowledge base
-        knowledge_base = MarketVectorStore()
-        logger.info("Knowledge base initialized")
+        # Initialize knowledge base (optional)
+        try:
+            knowledge_base = MarketVectorStore()
+            logger.info("Knowledge base initialized")
+        except Exception as e:
+            logger.warning(f"Knowledge base initialization skipped: {str(e)}")
         
-        logger.info("All components initialized successfully")
+        logger.info("Component initialization completed")
     except Exception as e:
         logger.error(f"Failed to initialize components: {str(e)}")
+        # Don't raise the exception, just log it
 
 # Start component initialization in the background
 asyncio.create_task(initialize_components())

@@ -56,7 +56,11 @@ RUN echo '#!/bin/bash\n\
     set -e\n\
     echo "Testing application startup..."\n\
     \n\
-    # Start the FastAPI server in foreground with debug logging\n\
+    # Set required environment variables\n\
+    export REDIS_HOST=localhost\n\
+    export REDIS_PORT=6379\n\
+    export PINECONE_API_KEY=test-key\n\
+    \n\
     echo "Starting FastAPI server..."\n\
     python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --log-level debug\n\
     ' > /app/test.sh && chmod +x /app/test.sh
