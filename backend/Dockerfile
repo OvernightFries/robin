@@ -55,39 +55,9 @@ RUN echo '#!/bin/bash\n\
     set -e\n\
     echo "Starting application..."\n\
     \n\
-    # Function to check if port is available\n\
-    check_port() {\n\
-    local max_attempts=60\n\
-    local attempt=1\n\
-    while [ $attempt -le $max_attempts ]; do\n\
-    echo "Attempt $attempt: Waiting for server to be ready..."\n\
-    if nc -z localhost 8080; then\n\
-    echo "Server is ready!"\n\
-    return 0\n\
-    fi\n\
-    sleep 5\n\
-    attempt=$((attempt + 1))\n\
-    done\n\
-    echo "Server failed to start after $max_attempts attempts"\n\
-    return 1\n\
-    }\n\
-    \n\
-    # Start the FastAPI server in the background\n\
+    # Start the FastAPI server\n\
     echo "Starting FastAPI server..."\n\
-    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info &\n\
-    \n\
-    # Wait for server to start\n\
-    check_port\n\
-    \n\
-    # Start model loading in background\n\
-    echo "Starting model loading..."\n\
-    python -c "from sentence_transformers import SentenceTransformer; \\\n\
-    print(\"Loading model...\"); \\\n\
-    model = SentenceTransformer(\"sentence-transformers/all-MiniLM-L6-v2\", cache_folder=\"/app/model_cache\"); \\\n\
-    print(\"Model loaded successfully\")" &\n\
-    \n\
-    # Keep the container running\n\
-    tail -f /dev/null\n\
+    uvicorn main:app --host 0.0.0.0 --port 8080 --log-level info\n\
     ' > /app/start.sh && chmod +x /app/start.sh
 
 # Health check with longer timeout and better retry logic
