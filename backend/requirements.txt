@@ -1,5 +1,5 @@
 aiohttp==3.9.3
-websockets
+websockets>=9.0,<11
 alpaca-trade-api>=3.0.2
 fastapi==0.109.2
 pydantic==2.6.1

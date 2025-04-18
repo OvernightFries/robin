@@ -18,6 +18,9 @@ from pinecone.core.client.models import CreateIndexRequest, ServerlessSpec
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import uuid
+import redis
+import json
+from utils.redis_client import init_redis
 
 # Configure logging
 logging.basicConfig(
@@ -150,10 +153,13 @@ if index_name not in pc.list_indexes().names():
         )
     )
 
+# Initialize Redis
+redis_client = init_redis()
+
 # Initialize components
 try:
     logger.info("Initializing components...")
-    chat_memory = ChatMemory()
+    chat_memory = ChatMemory(redis_client)  # Pass Redis client to ChatMemory
     vectorizer = FinancialDataVectorizer()  # For real-time market data
     knowledge_base = MarketVectorStore()    # For pre-processed PDFs
     logger.info("Components initialized successfully")
@@ -260,47 +266,70 @@ async def query(request: QueryRequest):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with detailed status."""
+    """Health check endpoint."""
     try:
-        health_status = {
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "components": {}
-        }
+        if redis_client:
+            redis_client.ping()
+            return {"status": "healthy", "redis": "connected"}
+        return {"status": "healthy", "redis": "not_connected", "warning": "Redis not configured"}
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return {"status": "healthy", "redis": "not_connected", "warning": str(e)}
+
+@app.get("/test-redis")
+async def test_redis():
+    """Test Redis connection and basic operations."""
+    try:
+        if not redis_client:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "error", "message": "Redis client not initialized"}
+            )
         
-        # Check Pinecone connection
-        try:
-            pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-            index_name = os.getenv("PINECONE_INDEX_NAME")
-            if index_name not in pc.list_indexes().names():
-                raise Exception("Pinecone index not found")
-            health_status["components"]["pinecone"] = "healthy"
-        except Exception as e:
-            logger.error(f"Pinecone health check failed: {str(e)}")
-            health_status["components"]["pinecone"] = "unhealthy"
-            health_status["status"] = "degraded"
+        # Test basic operations
+        test_key = "test:connection"
+        test_value = {"timestamp": datetime.utcnow().isoformat()}
         
-        # Check other components
-        for component in ["chat_memory", "vectorizer", "knowledge_base"]:
-            try:
-                if globals().get(component) is None:
-                    raise Exception(f"{component} not initialized")
-                health_status["components"][component] = "healthy"
-            except Exception as e:
-                logger.error(f"{component} health check failed: {str(e)}")
-                health_status["components"][component] = "unhealthy"
-                health_status["status"] = "degraded"
+        # Test set
+        redis_client.setex(
+            test_key,
+            60,  # 1 minute TTL
+            json.dumps(test_value)
+        )
         
-        return JSONResponse(content=health_status)
+        # Test get
+        retrieved = redis_client.get(test_key)
+        if not retrieved:
+            raise Exception("Failed to retrieve test value")
+            
+        # Test delete
+        redis_client.delete(test_key)
+        
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": "Redis operations successful",
+                "test_value": test_value,
+                "retrieved_value": json.loads(retrieved),
+                "redis_config": {
+                    "host": os.getenv("REDIS_HOST", "not set"),
+                    "port": os.getenv("REDIS_PORT", "not set"),
+                    "is_memorystore": redis_host != "localhost" and redis_host != "127.0.0.1"
+                }
+            }
+        )
         
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}", exc_info=True)
+        logger.error(f"Redis test failed: {str(e)}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={
-                "status": "unhealthy",
-                "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "status": "error",
+                "message": str(e),
+                "redis_config": {
+                    "host": os.getenv("REDIS_HOST", "not set"),
+                    "port": os.getenv("REDIS_PORT", "not set")
+                }
             }
         )
 

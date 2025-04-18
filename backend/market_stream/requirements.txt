@@ -3,10 +3,10 @@ websockets>=9.0,<11
 alpaca-trade-api>=3.0.2
 msgpack==1.0.3
 python-dotenv==1.0.1
-redis==5.0.1
+fastapi==0.109.2
+uvicorn==0.27.1
+pydantic==2.6.1
+numpy==1.26.4
+pandas==2.2.0
 requests==2.31.0
-pandas==2.1.4
-numpy==1.26.2
-fastapi==0.109.0
-uvicorn==0.27.0
-pydantic==2.5.3 
+redis==5.0.1 
