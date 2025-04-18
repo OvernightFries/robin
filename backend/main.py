@@ -33,7 +33,20 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
+# Get port from environment variable or default to 8080
+PORT = int(os.getenv("PORT", "8080"))
+logger.info(f"Starting application on port {PORT}")
+
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class InitializeTickerRequest(BaseModel):
     symbol: str
@@ -97,32 +110,62 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
             headers={"Access-Control-Allow-Origin": "https://robin-khaki.vercel.app"}
         )
 
+# Initialize Redis and components after route registration
+redis_client = init_redis()
+
+# Initialize components as None
+chat_memory = None
+vectorizer = None
+knowledge_base = None
+
+async def initialize_components():
+    """Initialize components in the background."""
+    global chat_memory, vectorizer, knowledge_base
+    
+    try:
+        logger.info("Starting component initialization...")
+        
+        # Initialize chat memory
+        chat_memory = ChatMemory(redis_client)
+        logger.info("Chat memory initialized")
+        
+        # Initialize vectorizer
+        vectorizer = FinancialDataVectorizer()
+        logger.info("Vectorizer initialized")
+        
+        # Initialize knowledge base
+        knowledge_base = MarketVectorStore()
+        logger.info("Knowledge base initialized")
+        
+        logger.info("All components initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize components: {str(e)}")
+
+# Start component initialization in the background
+asyncio.create_task(initialize_components())
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     try:
-        if redis_client:
-            redis_client.ping()
-            return {"status": "healthy", "redis": "connected"}
-        return {"status": "healthy", "redis": "not_connected", "warning": "Redis not configured"}
+        redis_status = "connected" if redis_client and redis_client.ping() else "not_connected"
+        
+        return {
+            "status": "healthy",
+            "redis": redis_status,
+            "components": {
+                "chat_memory": "initialized" if chat_memory else "not_initialized",
+                "vectorizer": "initialized" if vectorizer else "not_initialized",
+                "knowledge_base": "initialized" if knowledge_base else "not_initialized"
+            }
+        }
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
-        return {"status": "healthy", "redis": "not_connected", "warning": str(e)}
-
-# Initialize Redis and components after route registration
-redis_client = init_redis()
-
-try:
-    logger.info("Initializing components...")
-    chat_memory = ChatMemory(redis_client)
-    vectorizer = FinancialDataVectorizer()
-    knowledge_base = MarketVectorStore()
-    logger.info("Components initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize components: {str(e)}")
-    chat_memory = None
-    vectorizer = None
-    knowledge_base = None
+        return {
+            "status": "healthy",
+            "redis": "not_connected",
+            "warning": str(e)
+        }
 
 class QueryRequest(BaseModel):
     query: str
@@ -247,11 +290,11 @@ async def websocket_endpoint(websocket: WebSocket):
 # Start the application
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8080))
+    logger.info("Starting uvicorn server...")
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=port,
+        port=PORT,
         log_level="info",
         reload=False
     )

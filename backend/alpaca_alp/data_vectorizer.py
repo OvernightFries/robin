@@ -14,81 +14,38 @@ logger = logging.getLogger(__name__)
 
 class FinancialDataVectorizer:
     def __init__(self):
+        self.model = None  # Don't load model in init
         self._model_loaded = False
-        self._model = None
-        self._pinecone_client = None
-        self._index = None
         
-    async def load_model(self):
-        """Load the model if not already loaded."""
+        # Initialize Pinecone
+        self.api_key = os.getenv("PINECONE_API_KEY")
+        # Use the real-time index name from env
+        self.index_name = os.getenv("PINECONE_REALTIME_INDEX", "real-time-vectorization")
+        
+        # Initialize Pinecone client
+        self.pc = Pinecone(api_key=self.api_key)
+        
+        # Create index if it doesn't exist
+        if self.index_name not in self.pc.list_indexes().names():
+            self.pc.create_index(
+                name=self.index_name,
+                dimension=384,  # Dimension for MiniLM model
+                metric='cosine',
+                spec=ServerlessSpec(
+                    cloud='aws',
+                    region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
+                )
+            )
+            
+        self.index = self.pc.Index(self.index_name)
+    
+    def load_model(self):
+        """Load the model from cache"""
         if not self._model_loaded:
-            try:
-                self._model = SentenceTransformer('all-MiniLM-L6-v2')
-                self._model_loaded = True
-                logger.info("Model loaded successfully")
-            except Exception as e:
-                logger.error(f"Failed to load model: {str(e)}")
-                raise
-                
-    async def init_pinecone(self):
-        """Initialize Pinecone client if not already initialized."""
-        if not self._pinecone_client:
-            try:
-                from rag.setup_pinecone import init_pinecone
-                self._pinecone_client = init_pinecone()
-                self._index = self._pinecone_client.Index("financial-data")
-                logger.info("Pinecone client initialized successfully")
-            except Exception as e:
-                logger.warning(f"Pinecone initialization failed: {str(e)}")
-                self._pinecone_client = None
-                self._index = None
-                
-    async def vectorize_options(self, options_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Vectorize options data and store in Pinecone if available."""
-        try:
-            await self.load_model()
-            
-            # Process options data
-            processed_data = {}
-            for symbol, data in options_data.items():
-                # Extract and process descriptions
-                descriptions = []
-                for option in data.get('options', []):
-                    desc = f"{option.get('type', '')} {option.get('strike', '')} {option.get('expiration', '')}"
-                    descriptions.append(desc)
-                
-                # Vectorize descriptions
-                if descriptions:
-                    vectors = self._model.encode(descriptions)
-                    
-                    # Store in Pinecone if available
-                    if self._index:
-                        try:
-                            await self.init_pinecone()
-                            vectors_to_upsert = []
-                            for i, vector in enumerate(vectors):
-                                vectors_to_upsert.append({
-                                    'id': f"{symbol}-{i}",
-                                    'values': vector.tolist(),
-                                    'metadata': {
-                                        'symbol': symbol,
-                                        'description': descriptions[i]
-                                    }
-                                })
-                            self._index.upsert(vectors=vectors_to_upsert)
-                        except Exception as e:
-                            logger.warning(f"Failed to store vectors in Pinecone: {str(e)}")
-                    
-                    processed_data[symbol] = {
-                        'vectors': vectors.tolist(),
-                        'descriptions': descriptions
-                    }
-            
-            return processed_data
-            
-        except Exception as e:
-            logger.error(f"Error in vectorize_options: {str(e)}")
-            raise
+            logger.info("Loading sentence transformer model from cache...")
+            self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+            self._model_loaded = True
+            logger.info("Model loaded from cache successfully")
     
     def process_options_data(self, contracts: List[Dict[Any, Any]]) -> List[str]:
         """Convert options contracts into text descriptions for embedding"""
@@ -110,7 +67,7 @@ class FinancialDataVectorizer:
     def vectorize_options(self, descriptions: List[str], metadata: List[Dict]):
         """Convert options descriptions to vectors and store in Pinecone"""
         self.load_model()  # Ensure model is loaded
-        embeddings = self._model.encode(descriptions)
+        embeddings = self.model.encode(descriptions)
         
         # Generate IDs for each embedding
         ids = [f"opt_{i}_{datetime.now().strftime('%Y%m%d')}" for i in range(len(descriptions))]
@@ -133,7 +90,7 @@ class FinancialDataVectorizer:
         batch_size = 100
         for i in range(0, len(vectors), batch_size):
             batch = vectors[i:i + batch_size]
-            self._index.upsert(vectors=batch)
+            self.index.upsert(vectors=batch)
             logger.info(f"Upserted batch {i//batch_size + 1} of {len(vectors)//batch_size + 1}")
     
     def process_market_data(self, market_data: List[Dict]) -> List[str]:
@@ -153,7 +110,7 @@ class FinancialDataVectorizer:
     
     def vectorize_market_data(self, descriptions: List[str], metadata: List[Dict]):
         """Convert market data descriptions to vectors and store in Pinecone"""
-        embeddings = self._model.encode(descriptions)
+        embeddings = self.model.encode(descriptions)
         
         # Generate IDs for each embedding
         ids = [f"mkt_{i}_{datetime.now().strftime('%Y%m%d')}" for i in range(len(descriptions))]
@@ -176,13 +133,13 @@ class FinancialDataVectorizer:
         batch_size = 100
         for i in range(0, len(vectors), batch_size):
             batch = vectors[i:i + batch_size]
-            self._index.upsert(vectors=batch)
+            self.index.upsert(vectors=batch)
             logger.info(f"Upserted batch {i//batch_size + 1} of {len(vectors)//batch_size + 1}")
     
     def cleanup_vectors(self, symbol: str):
         """Delete vectors for a specific symbol"""
         # Delete vectors by filtering on metadata
-        self._index.delete(filter={'symbol': symbol})
+        self.index.delete(filter={'symbol': symbol})
         logger.info(f"Deleted vectors for {symbol}")
 
     async def process_ticker_data(self, symbol: str):
@@ -213,7 +170,7 @@ class FinancialDataVectorizer:
         await self.vectorize_options(options_descriptions, options_metadata)
         
         # Show total vectors stored
-        stats = self._index.describe_index_stats()
+        stats = self.index.describe_index_stats()
         logger.info(f"Total vectors stored in index: {stats.total_vector_count}")
         
         logger.info(f"Data vectorization complete for {symbol}")
