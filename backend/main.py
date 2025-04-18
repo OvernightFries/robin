@@ -314,7 +314,7 @@ async def test_redis():
                 "redis_config": {
                     "host": os.getenv("REDIS_HOST", "not set"),
                     "port": os.getenv("REDIS_PORT", "not set"),
-                    "is_memorystore": redis_host != "localhost" and redis_host != "127.0.0.1"
+                    "is_memorystore": os.getenv("REDIS_HOST", "localhost") not in ["localhost", "127.0.0.1"]
                 }
             }
         )

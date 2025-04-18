@@ -16,7 +16,7 @@ def init_redis() -> Optional[redis.Redis]:
         logger.info(f"Attempting to connect to Redis at {redis_host}:{redis_port}")
         
         # Determine if we're using Memorystore (production) or local Redis
-        is_memorystore = redis_host != "localhost" and redis_host != "127.0.0.1"
+        is_memorystore = redis_host not in ["localhost", "127.0.0.1"]
         
         if is_memorystore:
             # Google Cloud Memorystore configuration
