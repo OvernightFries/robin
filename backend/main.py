@@ -39,19 +39,7 @@ app = FastAPI()
 async def startup_event():
     logger.info("Application startup - registered routes:")
     for route in app.routes:
-        logger.info(f"Route: {route.path} - Methods: {route.methods}")
-
-# Add root endpoint
-@app.get("/")
-async def root():
-    return {
-        "status": "ok",
-        "message": "API is running",
-        "endpoints": {
-            "health": "/health",
-            "initialize_ticker": "/initialize_ticker"
-        }
-    }
+        logger.info(f"Route: {route.path} - Methods: {route.methods} - Name: {route.name}")
 
 # Global OPTIONS handler for all paths - MUST be before CORS middleware
 @app.options("/{path:path}")
@@ -169,6 +157,18 @@ except Exception as e:
     chat_memory = None
     vectorizer = None
     knowledge_base = None
+
+# Add root endpoint
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "message": "API is running",
+        "endpoints": {
+            "health": "/health",
+            "initialize_ticker": "/initialize_ticker"
+        }
+    }
 
 class QueryRequest(BaseModel):
     query: str
