@@ -24,20 +24,28 @@ class FinancialDataVectorizer:
         
         # Initialize Pinecone client
         self.pc = Pinecone(api_key=self.api_key)
+        self.index = None  # Don't create index in init
         
-        # Create index if it doesn't exist
-        if self.index_name not in self.pc.list_indexes().names():
-            self.pc.create_index(
-                name=self.index_name,
-                dimension=384,  # Dimension for MiniLM model
-                metric='cosine',
-                spec=ServerlessSpec(
-                    cloud='aws',
-                    region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
-                )
-            )
-            
-        self.index = self.pc.Index(self.index_name)
+    async def ensure_index_exists(self):
+        """Ensure the real-time index exists, create if it doesn't."""
+        try:
+            if not self.index:
+                if self.index_name not in self.pc.list_indexes().names():
+                    logger.info(f"Creating real-time index {self.index_name}")
+                    self.pc.create_index(
+                        name=self.index_name,
+                        dimension=384,  # Dimension for MiniLM model
+                        metric='cosine',
+                        spec=ServerlessSpec(
+                            cloud='aws',
+                            region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
+                        )
+                    )
+                self.index = self.pc.Index(self.index_name)
+                logger.info(f"Real-time index {self.index_name} is ready")
+        except Exception as e:
+            logger.error(f"Error ensuring index exists: {e}")
+            raise
     
     def load_model(self):
         """Load the model from cache"""
@@ -145,6 +153,9 @@ class FinancialDataVectorizer:
     async def process_ticker_data(self, symbol: str):
         """Process and vectorize all data for a given ticker"""
         logger.info(f"Fetching options data for {symbol}...")
+        
+        # Ensure index exists before processing
+        await self.ensure_index_exists()
         
         # Fetch options data
         options_contracts = await fetch_all_contracts(symbol)

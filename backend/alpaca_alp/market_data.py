@@ -26,7 +26,7 @@ class MarketData:
         self.api = tradeapi.REST(
             self.api_key,
             self.secret_key,
-            base_url=os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets/v2")
+            base_url='https://paper-api.alpaca.markets'
         )
         
     async def get_market_data(self) -> Dict[str, Any]:
