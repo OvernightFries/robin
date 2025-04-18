@@ -6,12 +6,13 @@ WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive \
     PORT=8080 \
     PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
     TRANSFORMERS_CACHE=/app/model_cache \
     HF_HOME=/app/model_cache \
     PYTHONPATH=/app
 
-# Install build dependencies and curl for healthcheck
-RUN apt-get update && apt-get install -y \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     git \
@@ -35,6 +36,20 @@ COPY market_stream/requirements.txt ./market_stream/
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r market_stream/requirements.txt && \
     pip install --no-cache-dir huggingface_hub[hf_xet]
+
+# Create model cache directory
+RUN mkdir -p /app/model_cache
+
+# Pre-download the model during build and fail if it can't download
+RUN python -c "import sys; \
+    from sentence_transformers import SentenceTransformer; \
+    try: \
+    print('Downloading model...'); \
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
+    print('Model downloaded successfully'); \
+    except Exception as e: \
+    print(f'Error downloading model: {str(e)}'); \
+    sys.exit(1)"
 
 # Copy application code
 COPY . .
