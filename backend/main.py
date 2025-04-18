@@ -17,6 +17,7 @@ from pinecone.core.client.api_client import ApiClient
 from pinecone.core.client.models import CreateIndexRequest, ServerlessSpec
 from fastapi import Request
 from fastapi.responses import JSONResponse
+import uuid
 
 # Configure logging
 logging.basicConfig(
@@ -66,13 +67,69 @@ app.add_middleware(
     max_age=600
 )
 
-# Add middleware to log all requests
+# Custom exception handlers
+class APIError(Exception):
+    def __init__(self, message: str, status_code: int = 500, details: dict = None):
+        self.message = message
+        self.status_code = status_code
+        self.details = details or {}
+        super().__init__(self.message)
+
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError):
+    logger.error(f"API Error: {exc.message}", extra={
+        "status_code": exc.status_code,
+        "details": exc.details,
+        "path": request.url.path,
+        "method": request.method
+    })
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.message,
+            "details": exc.details,
+            "status": "error"
+        }
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True, extra={
+        "path": request.url.path,
+        "method": request.method
+    })
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "message": str(exc),
+            "status": "error"
+        }
+    )
+
+# Add middleware to log all requests and responses
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
-    logger.info(f"Request: {request.method} {request.url.path}")
-    response = await call_next(request)
-    logger.info(f"Response: {response.status_code}")
-    return response
+async def log_requests_and_responses(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    logger.info(f"Request {request_id}: {request.method} {request.url.path}", extra={
+        "request_id": request_id,
+        "headers": dict(request.headers),
+        "query_params": dict(request.query_params)
+    })
+    
+    try:
+        response = await call_next(request)
+        logger.info(f"Response {request_id}: {response.status_code}", extra={
+            "request_id": request_id,
+            "status_code": response.status_code
+        })
+        return response
+    except Exception as e:
+        logger.error(f"Error in request {request_id}: {str(e)}", exc_info=True, extra={
+            "request_id": request_id,
+            "error": str(e)
+        })
+        raise
 
 # Initialize Pinecone
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -128,42 +185,60 @@ async def initialize_ticker_options():
 @app.post("/initialize_ticker")
 async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
     """Initialize data for a new ticker symbol."""
-    logger.info("Received POST request to /initialize_ticker")
-    symbol = request.symbol
-    logger.info(f"Initializing data for symbol: {symbol}")
+    request_id = str(uuid.uuid4())
+    logger.info(f"Request {request_id}: Initializing ticker {request.symbol}")
     
     try:
+        if not request.symbol:
+            raise APIError("Symbol is required", status_code=400)
+            
         # Get market data
-        market_data = MarketData(symbol)
-        market_context = await market_data.get_market_data()
+        try:
+            market_data = MarketData(request.symbol)
+            market_context = await market_data.get_market_data()
+        except Exception as e:
+            logger.error(f"Market data error for {request.symbol}: {str(e)}", exc_info=True)
+            raise APIError("Failed to fetch market data", status_code=500, details={"symbol": request.symbol})
         
         # Get options data
-        options_data = OptionsData(symbol)
-        options_context = await options_data.get_options_data()
+        try:
+            options_data = OptionsData(request.symbol)
+            options_context = await options_data.get_options_data()
+        except Exception as e:
+            logger.error(f"Options data error for {request.symbol}: {str(e)}", exc_info=True)
+            raise APIError("Failed to fetch options data", status_code=500, details={"symbol": request.symbol})
         
-        # Vectorize the data in real-time
-        await vectorizer.process_ticker_data(symbol)
+        # Vectorize the data
+        try:
+            await vectorizer.process_ticker_data(request.symbol)
+        except Exception as e:
+            logger.error(f"Vectorization error for {request.symbol}: {str(e)}", exc_info=True)
+            raise APIError("Failed to process ticker data", status_code=500, details={"symbol": request.symbol})
         
-        # Format context for RAG
-        formatted_context = market_data.format_for_rag(market_context)
+        response = {
+            "status": "success",
+            "message": f"Data initialized for {request.symbol}",
+            "market_context": market_context,
+            "options_context": options_context,
+            "request_id": request_id
+        }
         
-        response = JSONResponse(
-            content={
-                "status": "success",
-                "message": f"Data initialized for {symbol}",
-                "market_context": market_context,
-                "options_context": options_context
-            },
-            status_code=200
-        )
-        response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
+        logger.info(f"Successfully initialized ticker {request.symbol}", extra={
+            "request_id": request_id,
+            "symbol": request.symbol
+        })
         
-        logger.info(f"Successfully initialized ticker {symbol}")
-        return response
+        return JSONResponse(content=response)
         
+    except APIError:
+        raise
     except Exception as e:
-        logger.error(f"Error initializing ticker data: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Unexpected error initializing ticker {request.symbol}: {str(e)}", exc_info=True)
+        raise APIError(
+            "Failed to initialize ticker",
+            status_code=500,
+            details={"symbol": request.symbol, "error": str(e)}
+        )
 
 @app.post("/query")
 async def query(request: QueryRequest):
@@ -207,37 +282,49 @@ async def query(request: QueryRequest):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with detailed status."""
     try:
-        # Check if components are initialized
-        components_status = {
-            "chat_memory": "initialized" if chat_memory else "not_initialized",
-            "vectorizer": "initialized" if vectorizer else "not_initialized",
-            "knowledge_base": "initialized" if knowledge_base else "not_initialized"
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "components": {}
         }
-            
+        
         # Check Pinecone connection
-        pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-        index_name = os.getenv("PINECONE_INDEX_NAME")
-        if index_name not in pc.list_indexes().names():
-            raise Exception("Pinecone index not found")
-            
-        return {
-            "status": "healthy",
-            "components": components_status,
-            "pinecone": "connected"
-        }
+        try:
+            pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+            index_name = os.getenv("PINECONE_INDEX_NAME")
+            if index_name not in pc.list_indexes().names():
+                raise Exception("Pinecone index not found")
+            health_status["components"]["pinecone"] = "healthy"
+        except Exception as e:
+            logger.error(f"Pinecone health check failed: {str(e)}")
+            health_status["components"]["pinecone"] = "unhealthy"
+            health_status["status"] = "degraded"
+        
+        # Check other components
+        for component in ["chat_memory", "vectorizer", "knowledge_base"]:
+            try:
+                if globals().get(component) is None:
+                    raise Exception(f"{component} not initialized")
+                health_status["components"][component] = "healthy"
+            except Exception as e:
+                logger.error(f"{component} health check failed: {str(e)}")
+                health_status["components"][component] = "unhealthy"
+                health_status["status"] = "degraded"
+        
+        return JSONResponse(content=health_status)
+        
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return {
-            "status": "healthy",
-            "warning": str(e),
-            "components": {
-                "chat_memory": "not_initialized",
-                "vectorizer": "not_initialized",
-                "knowledge_base": "not_initialized"
+        logger.error(f"Health check failed: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
             }
-        }
+        )
 
 if __name__ == "__main__":
     import uvicorn
