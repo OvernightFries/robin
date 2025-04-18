@@ -44,9 +44,8 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 # Download and verify the model
 RUN python -c "from sentence_transformers import SentenceTransformer; \
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); \
-    print('Model loaded successfully'); \
-    print(f'Model path: {model.model_path}'); \
-    print(f'Model device: {model.device}')"
+    embeddings = model.encode('This is a test sentence'); \
+    print('Model loaded and encoded successfully')"
 
 # Copy application code
 COPY . .
