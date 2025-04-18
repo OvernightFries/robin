@@ -5,7 +5,8 @@ WORKDIR /app
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PORT=8080 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    SENTENCE_TRANSFORMERS_HOME=/app/model_cache
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -32,8 +33,14 @@ COPY market_stream/requirements.txt ./market_stream/
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r market_stream/requirements.txt
 
+# Pre-download the model during build and verify it's available
+RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/app/model_cache'); print('Model loaded successfully')"
+
 # Copy application code
 COPY . .
+
+# Verify model is available in the final image
+RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/app/model_cache'); print('Model verified in final image')"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

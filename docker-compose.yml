@@ -24,10 +24,10 @@ services:
       - WS_HOST=0.0.0.0
       - WS_PORT=8765
       - PORT=8000
+      - SENTENCE_TRANSFORMERS_HOME=/app/model_cache
     volumes:
       - ./backend:/app
       - ./data/pdfs:/app/data/pdfs
-      - model_cache:/app/model_cache
     restart: unless-stopped
     depends_on:
       redis:
@@ -103,4 +103,3 @@ services:
 
 volumes:
   redis_data:
-  model_cache:

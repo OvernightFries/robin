@@ -1,0 +1,5 @@
+[33m8155c11[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m sentence-transformers should now work, repalced with model loader
+[33me81d163[m ticker
+[33m77cf6c3[m Removed Supervisor and simplified changes
+[33m8233237[m Change deployment
+[33m158c857[m redis
