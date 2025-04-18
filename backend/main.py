@@ -62,43 +62,40 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
     expose_headers=["*"],
     max_age=600
 )
 
-# Custom exception handlers
-class APIError(Exception):
-    def __init__(self, message: str, status_code: int = 500, details: dict = None):
-        self.message = message
-        self.status_code = status_code
-        self.details = details or {}
-        super().__init__(self.message)
+# Add middleware to handle CORS for all responses
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
 
-@app.exception_handler(APIError)
-async def api_error_handler(request: Request, exc: APIError):
-    logger.error(f"API Error: {exc.message}", extra={
-        "status_code": exc.status_code,
-        "details": exc.details,
-        "path": request.url.path,
-        "method": request.method
-    })
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.message,
-            "details": exc.details,
-            "status": "error"
-        }
+# Global OPTIONS handler for all paths
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    logger.info(f"Handling OPTIONS request for path: {path}")
+    response = JSONResponse(
+        content={"status": "ok", "message": "CORS preflight request handled"},
+        status_code=200
     )
+    response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
 
+# Custom exception handler that includes CORS headers
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True, extra={
-        "path": request.url.path,
-        "method": request.method
-    })
-    return JSONResponse(
+    logger.error(f"Error handling request: {str(exc)}", exc_info=True)
+    response = JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
@@ -106,6 +103,10 @@ async def global_exception_handler(request: Request, exc: Exception):
             "status": "error"
         }
     )
+    response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 # Add middleware to log all requests and responses
 @app.middleware("http")
@@ -169,19 +170,6 @@ class QueryRequest(BaseModel):
 class InitializeTickerRequest(BaseModel):
     symbol: str
 
-@app.options("/initialize_ticker")
-async def initialize_ticker_options():
-    logger.info("Handling OPTIONS request for /initialize_ticker")
-    response = JSONResponse(
-        content={"status": "ok", "message": "CORS preflight request handled"},
-        status_code=200
-    )
-    response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Max-Age"] = "600"
-    return response
-
 @app.post("/initialize_ticker")
 async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
     """Initialize data for a new ticker symbol."""
@@ -190,54 +178,43 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
     
     try:
         if not request.symbol:
-            raise APIError("Symbol is required", status_code=400)
+            raise HTTPException(
+                status_code=400,
+                detail="Symbol is required",
+                headers={"Access-Control-Allow-Origin": "https://robin-khaki.vercel.app"}
+            )
             
         # Get market data
-        try:
-            market_data = MarketData(request.symbol)
-            market_context = await market_data.get_market_data()
-        except Exception as e:
-            logger.error(f"Market data error for {request.symbol}: {str(e)}", exc_info=True)
-            raise APIError("Failed to fetch market data", status_code=500, details={"symbol": request.symbol})
+        market_data = MarketData(request.symbol)
+        market_context = await market_data.get_market_data()
         
         # Get options data
-        try:
-            options_data = OptionsData(request.symbol)
-            options_context = await options_data.get_options_data()
-        except Exception as e:
-            logger.error(f"Options data error for {request.symbol}: {str(e)}", exc_info=True)
-            raise APIError("Failed to fetch options data", status_code=500, details={"symbol": request.symbol})
+        options_data = OptionsData(request.symbol)
+        options_context = await options_data.get_options_data()
         
         # Vectorize the data
-        try:
-            await vectorizer.process_ticker_data(request.symbol)
-        except Exception as e:
-            logger.error(f"Vectorization error for {request.symbol}: {str(e)}", exc_info=True)
-            raise APIError("Failed to process ticker data", status_code=500, details={"symbol": request.symbol})
+        await vectorizer.process_ticker_data(request.symbol)
         
-        response = {
-            "status": "success",
-            "message": f"Data initialized for {request.symbol}",
-            "market_context": market_context,
-            "options_context": options_context,
-            "request_id": request_id
-        }
+        response = JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Data initialized for {request.symbol}",
+                "market_context": market_context,
+                "options_context": options_context,
+                "request_id": request_id
+            },
+            status_code=200
+        )
         
-        logger.info(f"Successfully initialized ticker {request.symbol}", extra={
-            "request_id": request_id,
-            "symbol": request.symbol
-        })
+        logger.info(f"Successfully initialized ticker {request.symbol}")
+        return response
         
-        return JSONResponse(content=response)
-        
-    except APIError:
-        raise
     except Exception as e:
-        logger.error(f"Unexpected error initializing ticker {request.symbol}: {str(e)}", exc_info=True)
-        raise APIError(
-            "Failed to initialize ticker",
+        logger.error(f"Error initializing ticker {request.symbol}: {str(e)}")
+        raise HTTPException(
             status_code=500,
-            details={"symbol": request.symbol, "error": str(e)}
+            detail=str(e),
+            headers={"Access-Control-Allow-Origin": "https://robin-khaki.vercel.app"}
         )
 
 @app.post("/query")
