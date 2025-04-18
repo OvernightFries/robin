@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
-    PORT=8080 \
+    PORT=8000 \
     PYTHONUNBUFFERED=1 \
     SENTENCE_TRANSFORMERS_HOME=/app/model_cache
 
@@ -31,7 +31,8 @@ COPY market_stream/requirements.txt ./market_stream/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r market_stream/requirements.txt
+    pip install --no-cache-dir -r market_stream/requirements.txt && \
+    pip install --no-cache-dir huggingface_hub[hf_xet]
 
 # Pre-download the model during build and verify it's available
 RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/app/model_cache'); print('Model loaded successfully')"
@@ -39,15 +40,19 @@ RUN python -c "from sentence_transformers import SentenceTransformer; model = Se
 # Copy application code
 COPY . .
 
-# Verify model is available in the final image
-RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/app/model_cache'); print('Model verified in final image')"
+# Create a startup script
+RUN echo '#!/bin/bash\n\
+    echo "Starting application..."\n\
+    python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer(\"all-MiniLM-L6-v2\", cache_folder=\"/app/model_cache\"); print(\"Model verified in container\")"\n\
+    uvicorn main:app --host 0.0.0.0 --port $PORT --log-level info\n\
+    ' > /app/start.sh && chmod +x /app/start.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Health check with longer timeout
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:$PORT/health || exit 1
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]
+# Run the application using the startup script
+CMD ["/app/start.sh"]
