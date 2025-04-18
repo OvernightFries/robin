@@ -50,6 +50,20 @@ async def root():
         }
     }
 
+# Global OPTIONS handler for all paths - MUST be before CORS middleware
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    logger.info(f"Handling OPTIONS request for path: {path}")
+    response = JSONResponse(
+        content={"status": "ok", "message": "CORS preflight request handled"},
+        status_code=200
+    )
+    response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
+
 # Configure CORS
 origins = [
     "https://robin-khaki.vercel.app",
@@ -70,21 +84,8 @@ app.add_middleware(
 # Add middleware to handle CORS for all responses
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
     response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    response.headers["Access-Control-Max-Age"] = "600"
-    return response
-
-# Global OPTIONS handler for all paths
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    logger.info(f"Handling OPTIONS request for path: {path}")
-    response = JSONResponse(
-        content={"status": "ok", "message": "CORS preflight request handled"},
-        status_code=200
-    )
     response.headers["Access-Control-Allow-Origin"] = "https://robin-khaki.vercel.app"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
