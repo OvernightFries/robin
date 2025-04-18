@@ -35,6 +35,9 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r market_stream/requirements.txt && \
     pip install --no-cache-dir huggingface_hub[hf_xet]
 
+# Pre-download the model during build
+RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/app/model_cache'); print('Model loaded successfully')"
+
 # Copy application code
 COPY . .
 
