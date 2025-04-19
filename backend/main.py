@@ -25,7 +25,7 @@ import asyncio
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Change to DEBUG for more detailed logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -128,57 +128,70 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
 # Initialize Redis and components after route registration
 redis_client = init_redis()
 
-# Initialize components
-chat_memory = None
-vectorizer = None
-knowledge_base = None
+# Initialize components with retry logic
+MAX_RETRIES = 3
+RETRY_DELAY = 5  # seconds
+
+async def initialize_with_retry(initializer, component_name):
+    """Initialize a component with retry logic."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            logger.info(f"Initializing {component_name} (attempt {attempt + 1}/{MAX_RETRIES})")
+            result = await initializer()
+            logger.info(f"Successfully initialized {component_name}")
+            return result
+        except Exception as e:
+            logger.error(f"Error initializing {component_name} (attempt {attempt + 1}): {e}")
+            if attempt < MAX_RETRIES - 1:
+                logger.info(f"Retrying in {RETRY_DELAY} seconds...")
+                await asyncio.sleep(RETRY_DELAY)
+            else:
+                logger.error(f"Failed to initialize {component_name} after {MAX_RETRIES} attempts")
+                return None
 
 async def initialize_components():
-    """Initialize components in the background."""
+    """Initialize components in the background with retry logic."""
     global chat_memory, vectorizer, knowledge_base
     
-    try:
-        # Initialize Redis for chat memory
-        chat_memory = ChatMemory()
-        logger.info("Chat memory initialized")
-    except Exception as e:
-        logger.error(f"Error initializing chat memory: {e}")
-        chat_memory = None
+    # Initialize Redis for chat memory
+    chat_memory = await initialize_with_retry(
+        lambda: ChatMemory(),
+        "chat memory"
+    )
 
-    try:
-        # Initialize vectorizer (lazy Pinecone initialization)
-        vectorizer = FinancialDataVectorizer()
-        logger.info("Vectorizer initialized in lazy mode")
-    except Exception as e:
-        logger.error(f"Error initializing vectorizer: {e}")
-        vectorizer = None
+    # Initialize vectorizer
+    vectorizer = await initialize_with_retry(
+        lambda: FinancialDataVectorizer(),
+        "vectorizer"
+    )
 
-    try:
-        # Initialize knowledge base (lazy Pinecone initialization)
-        knowledge_base = MarketVectorStore()
-        logger.info("Knowledge base initialized in lazy mode")
-    except Exception as e:
-        logger.error(f"Error initializing knowledge base: {e}")
-        knowledge_base = None
+    # Initialize knowledge base
+    knowledge_base = await initialize_with_retry(
+        lambda: MarketVectorStore(),
+        "knowledge base"
+    )
 
 # Start component initialization in the background
 asyncio.create_task(initialize_components())
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with detailed status."""
     try:
-        return {
+        status = {
             "status": "healthy",
             "server": "running",
             "components": {
                 "chat_memory": "initialized" if chat_memory else "not initialized",
                 "vectorizer": "initialized" if vectorizer else "not initialized",
                 "knowledge_base": "initialized" if knowledge_base else "not initialized"
-            }
+            },
+            "timestamp": datetime.utcnow().isoformat()
         }
+        logger.debug(f"Health check status: {status}")
+        return status
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"Health check failed: {e}", exc_info=True)
         return {
             "status": "degraded",
             "server": "running",
@@ -186,7 +199,9 @@ async def health_check():
                 "chat_memory": "error",
                 "vectorizer": "error",
                 "knowledge_base": "error"
-            }
+            },
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
         }
 
 class QueryRequest(BaseModel):
