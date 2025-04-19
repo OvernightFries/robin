@@ -57,12 +57,17 @@ class OptionsData:
         max_retries = 3
         retry_delay = 5
         
+        # Get today's date and a month from now
+        today = datetime.now().strftime("%Y-%m-%d")
+        next_month = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        
         for attempt in range(max_retries):
             try:
                 async with aiohttp.ClientSession() as session:
                     try:
-                        # Use the options URL for fetching contracts
-                        url = f"{self.options_url}?underlying_symbol={self.symbol}"
+                        # Use the options URL for fetching contracts with date filters and limit
+                        url = f"{self.options_url}?underlying_symbol={self.symbol}&expiration_date_gte={today}&expiration_date_lte={next_month}&limit=100"
+                        logger.info(f"Requesting options data: {url}")
                         
                         async with session.get(
                             url,
@@ -77,7 +82,7 @@ class OptionsData:
                             return {
                                 "status": "success",
                                 "symbol": self.symbol,
-                                "contracts": data,
+                                "contracts": data.get("option_contracts", [])[:100],  # Ensure we don't exceed 100 contracts
                                 "timestamp": datetime.now().isoformat()
                             }
                             

@@ -22,20 +22,17 @@ class MarketData:
         self.symbol = symbol.upper()
         self.api_key = api_key or os.getenv("ALPACA_API_KEY")
         self.api_secret = api_secret or os.getenv("ALPACA_SECRET_KEY")
-        
-        # URLs for different endpoints
-        self.trading_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
+        self.base_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
         self.data_url = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets/v2")
-        self.options_url = os.getenv("ALPACA_OPTIONS_URL", "https://api.alpaca.markets/v2/options/contracts")
         
         if not self.api_key or not self.api_secret:
             raise ValueError("Alpaca API key and secret key must be provided")
             
-        # Initialize REST client for trading operations
+        # Initialize REST client
         self.api = REST(
             self.api_key,
             self.api_secret,
-            base_url=self.trading_url,
+            base_url=self.base_url,
             api_version='v2'
         )
         
