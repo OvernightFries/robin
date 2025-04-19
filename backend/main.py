@@ -77,19 +77,27 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
                 headers={"Access-Control-Allow-Origin": "https://robin-khaki.vercel.app"}
             )
             
-        # Get market data
+        # Initialize data clients
         market_data = MarketData(request.symbol)
-        market_context = await market_data.get_market_data()
+        options_data = OptionsData(request.symbol)
         
-        # Get options data (with error handling)
-        try:
-            options_data = OptionsData(request.symbol)
-            options_context = await options_data.get_options_data()
-        except Exception as e:
-            logger.warning(f"Failed to fetch options data: {str(e)}")
-            options_context = {"status": "unavailable", "message": "Options data temporarily unavailable"}
+        # Fetch market and options data concurrently
+        market_context, options_context = await asyncio.gather(
+            market_data.get_market_data(),
+            options_data.get_options_data(),
+            return_exceptions=True  # Don't raise exceptions, return them instead
+        )
         
-        # Return response even if some data is missing
+        # Handle any exceptions from the concurrent calls
+        if isinstance(market_context, Exception):
+            logger.error(f"Market data error: {str(market_context)}")
+            market_context = {"status": "unavailable", "message": str(market_context)}
+            
+        if isinstance(options_context, Exception):
+            logger.error(f"Options data error: {str(options_context)}")
+            options_context = {"status": "unavailable", "message": str(options_context)}
+        
+        # Return response
         response = JSONResponse(
             content={
                 "status": "success",
@@ -106,7 +114,6 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error initializing ticker {request.symbol}: {str(e)}")
-        # Return a partial response instead of an error
         return JSONResponse(
             content={
                 "status": "partial",
@@ -115,7 +122,7 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
                 "options_context": {"status": "unavailable", "message": "Options data not fetched"},
                 "request_id": request_id
             },
-            status_code=200  # Return 200 even with partial data
+            status_code=200
         )
 
 # Initialize Redis and components after route registration
