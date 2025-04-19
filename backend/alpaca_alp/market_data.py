@@ -7,226 +7,202 @@ import numpy as np
 from dotenv import load_dotenv
 import alpaca_trade_api as tradeapi
 from zoneinfo import ZoneInfo
+import time
+import asyncio
+from alpaca_trade_api.rest import REST, TimeFrame
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MarketData:
-    def __init__(self, symbol: str, api_key: str = None, secret_key: str = None):
+    def __init__(self, symbol: str, api_key: str = None, api_secret: str = None):
         """Initialize the MarketData instance."""
         self.symbol = symbol.upper()
         self.api_key = api_key or os.getenv("ALPACA_API_KEY")
-        self.secret_key = secret_key or os.getenv("ALPACA_SECRET_KEY")
+        self.api_secret = api_secret or os.getenv("ALPACA_SECRET_KEY")
+        self.base_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
         
-        if not self.api_key or not self.secret_key:
+        if not self.api_key or not self.api_secret:
             raise ValueError("Alpaca API key and secret key must be provided")
             
-        # Initialize REST client for stocks
-        self.api = tradeapi.REST(
+        # Initialize REST client with timeout and retry settings
+        self.api = REST(
             self.api_key,
-            self.secret_key,
-            base_url='https://api.alpaca.markets/v2',
-            data_url='https://data.alpaca.markets/v2'
+            self.api_secret,
+            base_url=self.base_url,
+            api_version='v2',
+            timeout=30,  # 30 second timeout
+            retries=3,   # 3 retry attempts
+            retry_delay=5  # 5 second delay between retries
         )
         
-    async def get_market_data(self) -> Dict[str, Any]:
-        """Get comprehensive market data."""
-        try:
-            # Get current market data
+    async def get_market_data(self):
+        """Fetch current market data with retry logic"""
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
             try:
-                current_trade = self.api.get_latest_trade(self.symbol)
-                current_quote = self.api.get_latest_quote(self.symbol)
-                current_data = {
-                    "price": current_trade.price,
-                    "volume": current_trade.size,
-                    "bid": current_quote.bid_price,  # bid price
-                    "ask": current_quote.ask_price,  # ask price
-                    "bid_size": current_quote.bid_size,  # bid size
-                    "ask_size": current_quote.ask_size,  # ask size
-                    "timestamp": datetime.now().strftime('%Y-%m-%d')
-                }
-            except Exception as e:
-                logger.warning(f"Could not get current market data: {str(e)}")
-                # Get the last close price instead
+                # Get current market data
                 last_bars = self.api.get_bars(self.symbol, timeframe='1D', limit=1).df
-                if not last_bars.empty:
-                    current_data = {
-                        "price": last_bars['close'].iloc[-1],
-                        "volume": last_bars['volume'].iloc[-1],
-                        "bid": last_bars['close'].iloc[-1],
-                        "ask": last_bars['close'].iloc[-1],
-                        "bid_size": 0,
-                        "ask_size": 0,
-                        "timestamp": last_bars.index[-1].strftime('%Y-%m-%d'),
-                        "market_closed": True
-                    }
-                else:
-                    raise ValueError(f"No historical data available for {self.symbol}")
-            
-            # Get historical data with error handling
-            try:
-                # Get data for the last 30 days
-                end_date = datetime.now(ZoneInfo('America/New_York'))
-                start_date = end_date - timedelta(days=30)
+                if last_bars.empty:
+                    raise ValueError(f"No data available for {self.symbol}")
                 
-                daily_data = self.api.get_bars(
-                    self.symbol,
-                    timeframe='1D',
-                    start=start_date.strftime('%Y-%m-%d'),
-                    end=end_date.strftime('%Y-%m-%d')
-                ).df
-                
-                # Get data for the last 7 days
-                start_date = end_date - timedelta(days=7)
-                hourly_data = self.api.get_bars(
-                    self.symbol,
-                    timeframe='1H',
-                    start=start_date.strftime('%Y-%m-%d'),
-                    end=end_date.strftime('%Y-%m-%d')
-                ).df
-                
-                # Get data for the last day
-                start_date = end_date - timedelta(days=1)
-                minute_data = self.api.get_bars(
-                    self.symbol,
-                    timeframe='15Min',
-                    start=start_date.strftime('%Y-%m-%d'),
-                    end=end_date.strftime('%Y-%m-%d')
-                ).df
-                
-                # Check if we got any data
-                if daily_data.empty:
-                    logger.error(f"No daily data available for {self.symbol}")
-                    raise ValueError(f"No daily data available for {self.symbol}")
-                
-                # Log data info
-                logger.info(f"Daily data shape: {daily_data.shape}, columns: {daily_data.columns.tolist()}")
-                logger.info(f"Sample of daily data:\n{daily_data.head()}")
-                
-                # Ensure required columns exist
-                required_columns = ['close', 'high', 'low', 'open', 'volume']
-                for df in [daily_data, hourly_data, minute_data]:
-                    if not df.empty:  # Only check non-empty DataFrames
-                        missing_cols = [col for col in required_columns if col not in df.columns]
-                        if missing_cols:
-                            raise ValueError(f"Missing required columns: {missing_cols}")
+                # Get historical data
+                historical_data = await self._get_historical_data()
                 
                 # Calculate technical indicators
-                technical_indicators = self._calculate_technical_indicators(daily_data)
+                indicators = self._calculate_technical_indicators(historical_data)
                 
                 return {
-                    "current_data": current_data,
-                    "daily_data": {
-                        "dates": daily_data.index.strftime('%Y-%m-%d').tolist(),
-                        "open": daily_data['open'].tolist(),
-                        "high": daily_data['high'].tolist(),
-                        "low": daily_data['low'].tolist(),
-                        "close": daily_data['close'].tolist(),
-                        "volume": daily_data['volume'].tolist()
-                    },
-                    "hourly_data": {
-                        "dates": hourly_data.index.strftime('%Y-%m-%d %H:%M').tolist() if not hourly_data.empty else [],
-                        "open": hourly_data['open'].tolist() if not hourly_data.empty else [],
-                        "high": hourly_data['high'].tolist() if not hourly_data.empty else [],
-                        "low": hourly_data['low'].tolist() if not hourly_data.empty else [],
-                        "close": hourly_data['close'].tolist() if not hourly_data.empty else [],
-                        "volume": hourly_data['volume'].tolist() if not hourly_data.empty else []
-                    },
-                    "minute_data": {
-                        "dates": minute_data.index.strftime('%Y-%m-%d %H:%M').tolist() if not minute_data.empty else [],
-                        "open": minute_data['open'].tolist() if not minute_data.empty else [],
-                        "high": minute_data['high'].tolist() if not minute_data.empty else [],
-                        "low": minute_data['low'].tolist() if not minute_data.empty else [],
-                        "close": minute_data['close'].tolist() if not minute_data.empty else [],
-                        "volume": minute_data['volume'].tolist() if not minute_data.empty else []
-                    },
-                    "technical_indicators": technical_indicators
+                    "symbol": self.symbol,
+                    "current_price": last_bars['close'].iloc[-1],
+                    "volume": last_bars['volume'].iloc[-1],
+                    "timestamp": datetime.now().isoformat(),
+                    "historical_data": historical_data.to_dict('records'),
+                    "technical_indicators": indicators
                 }
                 
             except Exception as e:
-                logger.error(f"Error getting historical data: {str(e)}")
-                raise ValueError(f"Failed to get historical data for {self.symbol}: {str(e)}")
-            
-        except Exception as e:
-            logger.error(f"Error getting market data: {str(e)}")
-            raise
-            
-    def _calculate_technical_indicators(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate technical indicators using numpy."""
+                if attempt == max_retries - 1:
+                    print(f"Error fetching market data after {max_retries} attempts: {str(e)}")
+                    raise
+                print(f"Attempt {attempt + 1} failed: {str(e)}")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+
+    async def _get_historical_data(self):
+        """Fetch historical market data with retry logic"""
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                # Get daily data
+                daily_data = self.api.get_bars(
+                    self.symbol,
+                    timeframe=TimeFrame.Day,
+                    limit=200
+                ).df
+                
+                if daily_data.empty:
+                    raise ValueError(f"No historical data available for {self.symbol}")
+                
+                # Get hourly data
+                hourly_data = self.api.get_bars(
+                    self.symbol,
+                    timeframe=TimeFrame.Hour,
+                    limit=24
+                ).df
+                
+                # Get minute data
+                minute_data = self.api.get_bars(
+                    self.symbol,
+                    timeframe=TimeFrame.Minute,
+                    limit=60
+                ).df
+                
+                return pd.concat([daily_data, hourly_data, minute_data])
+                
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"Error fetching historical data after {max_retries} attempts: {str(e)}")
+                    raise
+                print(f"Attempt {attempt + 1} failed: {str(e)}")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+
+    def _calculate_technical_indicators(self, df):
+        """Calculate technical indicators with error handling"""
         try:
-            close = data['close'].values
-            high = data['high'].values
-            low = data['low'].values
-            volume = data['volume'].values
+            if df.empty:
+                raise ValueError("Empty DataFrame provided")
             
-            # Calculate SMA
-            def sma(data, period):
-                return np.convolve(data, np.ones(period)/period, mode='valid')
+            if not all(col in df.columns for col in ['close', 'high', 'low', 'volume']):
+                raise ValueError("Missing required columns in DataFrame")
             
-            # Calculate EMA
-            def ema(data, period):
-                return pd.Series(data).ewm(span=period, adjust=False).mean().values
+            if len(df) < 200:
+                raise ValueError("Insufficient data points for calculations")
             
-            # Calculate RSI
-            def rsi(data, period=14):
-                delta = np.diff(data)
-                gain = np.where(delta > 0, delta, 0)
-                loss = np.where(delta < 0, -delta, 0)
-                avg_gain = np.mean(gain[:period])
-                avg_loss = np.mean(loss[:period])
-                rs = avg_gain / avg_loss if avg_loss != 0 else 0
-                rsi_value = 100 - (100 / (1 + rs))
-                return [rsi_value] * len(data)  # Return a list of the same length as input data
-            
-            # Calculate MACD
-            def macd(data, fast=12, slow=26, signal=9):
-                ema_fast = ema(data, fast)
-                ema_slow = ema(data, slow)
-                macd_line = ema_fast - ema_slow
-                signal_line = ema(macd_line, signal)
-                return macd_line, signal_line, macd_line - signal_line
-            
-            # Calculate Bollinger Bands
-            def bollinger_bands(data, period=20, std_dev=2):
-                sma_20 = sma(data, period)
-                std = np.std(data[-period:])
-                upper = sma_20 + (std * std_dev)
-                lower = sma_20 - (std * std_dev)
-                return upper, sma_20, lower
+            # Calculate indicators
+            sma_20 = self._calculate_sma(df['close'], 20)
+            sma_50 = self._calculate_sma(df['close'], 50)
+            ema_20 = self._calculate_ema(df['close'], 20)
+            rsi = self._calculate_rsi(df['close'])
+            macd, signal = self._calculate_macd(df['close'])
+            upper_band, lower_band = self._calculate_bollinger_bands(df['close'])
             
             return {
-                "trend": {
-                    "sma_20": sma(close, 20).tolist(),
-                    "sma_50": sma(close, 50).tolist(),
-                    "sma_200": sma(close, 200).tolist(),
-                    "ema_20": ema(close, 20).tolist(),
-                    "ema_50": ema(close, 50).tolist(),
-                    "trend_strength": ((sma(close, 20)[-1] - sma(close, 50)[-1]) / sma(close, 50)[-1]) * 100
-                },
-                "momentum": {
-                    "rsi": rsi(close),
-                    "macd": {
-                        "macd_line": macd(close)[0].tolist(),
-                        "signal_line": macd(close)[1].tolist(),
-                        "histogram": macd(close)[2].tolist()
-                    }
-                },
-                "volatility": {
-                    "bollinger_bands": {
-                        "upper": bollinger_bands(close)[0].tolist(),
-                        "middle": bollinger_bands(close)[1].tolist(),
-                        "lower": bollinger_bands(close)[2].tolist()
-                    }
-                },
-                "volume": {
-                    "volume_sma": sma(volume, 20).tolist()
-                }
+                "sma_20": sma_20.iloc[-1],
+                "sma_50": sma_50.iloc[-1],
+                "ema_20": ema_20.iloc[-1],
+                "rsi": rsi.iloc[-1],
+                "macd": macd.iloc[-1],
+                "macd_signal": signal.iloc[-1],
+                "bollinger_upper": upper_band.iloc[-1],
+                "bollinger_lower": lower_band.iloc[-1]
             }
-        except Exception as e:
-            logger.error(f"Error calculating technical indicators: {str(e)}")
-            raise
             
+        except Exception as e:
+            print(f"Error calculating technical indicators: {str(e)}")
+            return {
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+
+    def _calculate_sma(self, data, window):
+        """Calculate Simple Moving Average"""
+        try:
+            return data.rolling(window=window).mean()
+        except Exception as e:
+            print(f"Error calculating SMA: {str(e)}")
+            return pd.Series([np.nan] * len(data))
+
+    def _calculate_ema(self, data, window):
+        """Calculate Exponential Moving Average"""
+        try:
+            return data.ewm(span=window, adjust=False).mean()
+        except Exception as e:
+            print(f"Error calculating EMA: {str(e)}")
+            return pd.Series([np.nan] * len(data))
+
+    def _calculate_rsi(self, data, window=14):
+        """Calculate Relative Strength Index"""
+        try:
+            delta = data.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+            rs = gain / loss
+            return 100 - (100 / (1 + rs))
+        except Exception as e:
+            print(f"Error calculating RSI: {str(e)}")
+            return pd.Series([np.nan] * len(data))
+
+    def _calculate_macd(self, data, fast=12, slow=26, signal=9):
+        """Calculate MACD"""
+        try:
+            exp1 = data.ewm(span=fast, adjust=False).mean()
+            exp2 = data.ewm(span=slow, adjust=False).mean()
+            macd = exp1 - exp2
+            signal_line = macd.ewm(span=signal, adjust=False).mean()
+            return macd, signal_line
+        except Exception as e:
+            print(f"Error calculating MACD: {str(e)}")
+            return pd.Series([np.nan] * len(data)), pd.Series([np.nan] * len(data))
+
+    def _calculate_bollinger_bands(self, data, window=20, num_std=2):
+        """Calculate Bollinger Bands"""
+        try:
+            sma = data.rolling(window=window).mean()
+            std = data.rolling(window=window).std()
+            upper_band = sma + (std * num_std)
+            lower_band = sma - (std * num_std)
+            return upper_band, lower_band
+        except Exception as e:
+            print(f"Error calculating Bollinger Bands: {str(e)}")
+            return pd.Series([np.nan] * len(data)), pd.Series([np.nan] * len(data))
+
     def format_for_rag(self, data: Dict[str, Any]) -> str:
         """Format market data for RAG in a structured, vectorizable format."""
         try:
@@ -240,7 +216,7 @@ class MarketData:
             overview = [
                 f"MARKET OVERVIEW:",
                 f"Symbol: {self.symbol}",
-                f"Current Price: ${data.get('current_data', {}).get('price', 0):.2f}",
+                f"Current Price: ${data.get('current_price', 0):.2f}",
                 f"Timestamp: {timestamp}",
                 f"Market Status: {'Closed' if data.get('current_data', {}).get('market_closed', False) else 'Open'}",
                 f"Exchange: {data.get('current_data', {}).get('exchange', 'Unknown')}",
@@ -250,15 +226,15 @@ class MarketData:
 
             # Price Action Section
             price_action = ["PRICE ACTION:"]
-            if 'daily_data' in data:
-                daily = data['daily_data']
+            if 'historical_data' in data:
+                historical_data = data['historical_data']
                 price_action.extend([
-                    f"Open: ${daily.get('open', [0])[-1]:.2f}",
-                    f"High: ${daily.get('high', [0])[-1]:.2f}",
-                    f"Low: ${daily.get('low', [0])[-1]:.2f}",
-                    f"Close: ${daily.get('close', [0])[-1]:.2f}",
-                    f"Volume: {daily.get('volume', [0])[-1]:,}",
-                    f"VWAP: ${daily.get('vwap', 0):.2f}"
+                    f"Open: ${historical_data[0]['open']:.2f}",
+                    f"High: ${historical_data[0]['high']:.2f}",
+                    f"Low: ${historical_data[0]['low']:.2f}",
+                    f"Close: ${historical_data[0]['close']:.2f}",
+                    f"Volume: {historical_data[0]['volume']:,}",
+                    f"VWAP: ${historical_data[0]['vwap']:.2f}"
                 ])
             sections.append("\n".join(price_action))
 
@@ -266,30 +242,17 @@ class MarketData:
             if 'technical_indicators' in data:
                 indicators = ["TECHNICAL INDICATORS:"]
                 tech = data['technical_indicators']
-                if 'trend' in tech:
-                    indicators.extend([
-                        f"SMA 20: {tech['trend'].get('sma_20', [0])[-1]:.2f}",
-                        f"SMA 50: {tech['trend'].get('sma_50', [0])[-1]:.2f}",
-                        f"EMA 20: {tech['trend'].get('ema_20', [0])[-1]:.2f}",
-                        f"Trend Strength: {tech['trend'].get('trend_strength', 0):.2f}%"
-                    ])
-                if 'momentum' in tech:
-                    momentum = tech['momentum']
-                    indicators.extend([
-                        f"RSI: {momentum.get('rsi', [0])[-1]:.1f}",
-                        f"MACD: {momentum.get('macd', {}).get('macd_line', [0])[-1]:.2f}",
-                        f"MACD Signal: {momentum.get('macd', {}).get('signal_line', [0])[-1]:.2f}",
-                        f"MACD Histogram: {momentum.get('macd', {}).get('histogram', [0])[-1]:.2f}"
-                    ])
-                if 'volatility' in tech:
-                    volatility = tech['volatility']
-                    bb = volatility.get('bollinger_bands', {})
-                    indicators.extend([
-                        f"Bollinger Bands:",
-                        f"  Upper: ${bb.get('upper', [0])[-1]:.2f}",
-                        f"  Middle: ${bb.get('middle', [0])[-1]:.2f}",
-                        f"  Lower: ${bb.get('lower', [0])[-1]:.2f}"
-                    ])
+                indicators.extend([
+                    f"SMA 20: {tech['sma_20']:.2f}",
+                    f"SMA 50: {tech['sma_50']:.2f}",
+                    f"EMA 20: {tech['ema_20']:.2f}",
+                    f"RSI: {tech['rsi']:.1f}",
+                    f"MACD: {tech['macd']:.2f}",
+                    f"MACD Signal: {tech['macd_signal']:.2f}",
+                    f"Bollinger Bands:",
+                    f"  Upper: ${tech['bollinger_upper']:.2f}",
+                    f"  Lower: ${tech['bollinger_lower']:.2f}"
+                ])
                 sections.append("\n".join(indicators))
 
             return "\n\n".join(sections)

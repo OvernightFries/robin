@@ -19,8 +19,9 @@ REAL_OPRA_SYMBOLS = [
 
 FAKE_OPRA_SYMBOLS = ["FAKEPACA"]
 
-REAL_WS_URL = "wss://stream.data.alpaca.markets/v1beta1/opra"
-TEST_WS_URL = "wss://stream.data.alpaca.markets/v2/test"
+# Updated WebSocket URLs
+REAL_WS_URL = "wss://stream.data.alpaca.markets/v2/iex"
+TEST_WS_URL = "wss://stream.data.alpaca.markets/v2/iex"  # Use same endpoint for testing
 
 HEADERS = {
     "APCA-API-KEY-ID": API_KEY,
