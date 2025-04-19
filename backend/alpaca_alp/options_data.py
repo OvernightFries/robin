@@ -3,10 +3,17 @@ import asyncio
 import json
 import websockets
 import msgpack
-import aiohttp
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import logging
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from alpaca.data.historical.option import OptionHistoricalDataClient
+from alpaca.data.requests import OptionChainRequest, OptionLatestQuoteRequest
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+import pytz
+from typing import Dict, Any
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -25,14 +32,6 @@ FAKE_OPRA_SYMBOLS = ["FAKEPACA"]
 REAL_WS_URL = "wss://stream.data.alpaca.markets/v2/iex"
 TEST_WS_URL = "wss://stream.data.alpaca.markets/v2/iex"  # Use same endpoint for testing
 
-HEADERS = {
-    "APCA-API-KEY-ID": API_KEY,
-    "APCA-API-SECRET-KEY": API_SECRET,
-    "Content-Type": "application/json"
-}
-
-BASE_URL_V2 = "https://api.alpaca.markets/v2/options/contracts"
-
 class OptionsData:
     def __init__(self, symbol: str, api_key: str = None, api_secret: str = None):
         """Initialize the OptionsData instance."""
@@ -40,128 +39,204 @@ class OptionsData:
         self.api_key = api_key or os.getenv("ALPACA_API_KEY")
         self.api_secret = api_secret or os.getenv("ALPACA_SECRET_KEY")
         
-        # URLs for different endpoints
-        self.trading_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
-        self.data_url = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets/v2")
-        self.options_url = os.getenv("ALPACA_OPTIONS_URL", "https://api.alpaca.markets/v2/options/contracts")
-        self.stream_url = os.getenv("ALPACA_STREAM_ENDPOINT", "wss://stream.data.alpaca.markets/v2/iex")
-        
-        self.headers = {
-            "APCA-API-KEY-ID": self.api_key,
-            "APCA-API-SECRET-KEY": self.api_secret,
-            "Content-Type": "application/json"
-        }
+        if not self.api_key or not self.api_secret:
+            raise ValueError("Alpaca API key and secret key must be provided")
+            
+        # Initialize Option Historical Data Client
+        self.api = OptionHistoricalDataClient(self.api_key, self.api_secret)
         
     async def get_options_data(self):
-        """Fetch options data with retry logic"""
-        max_retries = 3
-        retry_delay = 5
-        
-        # Get today's date and a month from now
-        today = datetime.now().strftime("%Y-%m-%d")
-        next_month = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-        
-        for attempt in range(max_retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    try:
-                        # Use the options URL for fetching contracts with date filters and limit
-                        url = f"{self.options_url}?underlying_symbol={self.symbol}&expiration_date_gte={today}&expiration_date_lte={next_month}&limit=100"
-                        logger.info(f"Requesting options data: {url}")
-                        
-                        async with session.get(
-                            url,
-                            headers=self.headers,
-                            timeout=aiohttp.ClientTimeout(total=30)
-                        ) as response:
-                            if response.status != 200:
-                                logger.warning(f"Failed to fetch options data: {await response.text()}")
-                                return {"status": "error", "message": "Failed to fetch options data"}
-                            
-                            data = await response.json()
-                            return {
-                                "status": "success",
-                                "symbol": self.symbol,
-                                "contracts": data.get("option_contracts", [])[:100],  # Ensure we don't exceed 100 contracts
-                                "timestamp": datetime.now().isoformat()
-                            }
-                            
-                    except asyncio.TimeoutError:
-                        logger.warning(f"Timeout while fetching options data for {self.symbol}")
-                        if attempt == max_retries - 1:
-                            return {"status": "error", "message": "Request timed out"}
-                        
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"Error fetching options data after {max_retries} attempts: {str(e)}")
-                    return {"status": "error", "message": str(e)}
-                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
-
-    async def _fetch_all_contracts(self):
-        """Fetch all option contracts for a given symbol with automatic pagination"""
-        all_contracts = []
-        page_token = None
-        date_ranges = self._generate_date_ranges()
-        
-        for start_date, end_date in date_ranges:
-            while True:
-                contracts, next_token = await self._fetch_contracts_page(start_date, end_date, page_token)
-                if contracts:
-                    all_contracts.extend(contracts)
-                    print(f"Fetched {len(contracts)} contracts for {self.symbol} ({start_date} to {end_date})")
+        """Fetch current options data with enhanced processing"""
+        try:
+            # Get options chain for next 30 days
+            end_date = datetime.now(pytz.UTC) + timedelta(days=30)
+            start_date = datetime.now(pytz.UTC)
+            
+            # Get options chain
+            params = OptionChainRequest(
+                symbol_or_symbols=self.symbol,
+                start=start_date,
+                end=end_date,
+                limit=100  # Limit to 100 contracts
+            )
+            
+            chain = self.api.get_option_chain(params)
+            df = chain.df
+            
+            if df.empty:
+                logger.warning(f"No options data available for {self.symbol}")
+                return self._get_default_response("No options data available")
+            
+            # Get latest quotes for all contracts
+            quote_params = OptionLatestQuoteRequest(symbol_or_symbols=df.index.tolist())
+            quotes = self.api.get_option_latest_quote(quote_params)
+            
+            # Process the options chain
+            processed_data = self._process_option_chain(df, quotes)
+            
+            return {
+                "symbol": self.symbol,
+                "timestamp": datetime.now().isoformat(),
+                "status": "success",
+                "message": "Data retrieved successfully",
+                "options_data": processed_data
+            }
                 
-                if not next_token:
-                    break
-                page_token = next_token
-                # Small delay to avoid rate limiting
-                await asyncio.sleep(0.1)
-        
-        return all_contracts
+        except Exception as e:
+            logger.error(f"Error fetching options data: {str(e)}")
+            return self._get_default_response(str(e))
 
-    def _generate_date_ranges(self):
-        """Generate a list of date ranges covering the next 2 years"""
-        today = datetime.today()
-        ranges = []
-        
-        # Generate 8 quarterly ranges (2 years)
-        for i in range(8):
-            start = today + timedelta(days=90 * i)
-            end = start + timedelta(days=90)
-            ranges.append((
-                start.strftime("%Y-%m-%d"),
-                end.strftime("%Y-%m-%d")
-            ))
-        
-        return ranges
-
-    async def _fetch_contracts_page(self, start_date: str, end_date: str, page_token: str = None):
-        """Fetch a single page of option contracts"""
-        params = {
-            "underlying_symbols": self.symbol,
-            "status": "active",
-            "expiration_date_gte": start_date,
-            "expiration_date_lte": end_date,
-            "limit": 300  # Maximum allowed by API
+    def _get_default_response(self, message: str) -> Dict[str, Any]:
+        """Return a default response when data is unavailable."""
+        return {
+            "symbol": self.symbol,
+            "timestamp": datetime.now().isoformat(),
+            "status": "partial",
+            "message": message,
+            "options_data": {
+                "contracts": [],
+                "metrics": {
+                    "total_volume": 0,
+                    "total_open_interest": 0,
+                    "put_call_ratio": 0
+                }
+            }
         }
-        
-        if page_token:
-            params["page_token"] = page_token
-        
-        print(f"Fetching options for {self.symbol} from {start_date} to {end_date}")
-        
-        async with aiohttp.ClientSession(headers=self.headers) as session:
-            async with session.get(self.options_url, params=params) as response:
-                if response.status != 200:
-                    print(f"Error: Status {response.status}")
-                    return [], None
-                    
-                data = await response.json()
-                contracts = data.get("option_contracts", [])
-                next_page_token = data.get("next_page_token")
+
+    def _process_option_chain(self, df: pd.DataFrame, quotes: Dict) -> Dict[str, Any]:
+        """Process the options chain data and calculate metrics"""
+        try:
+            if df.empty:
+                raise ValueError("Empty DataFrame provided")
+            
+            # Calculate moneyness and days to expiry
+            df["moneyness"] = df["strike_price"] / df["underlying_price"]
+            df["days_to_expiry"] = (df["expiration_date"] - datetime.now(pytz.UTC)).dt.days
+            
+            # Calculate Greeks and other metrics
+            df["delta"] = df["delta"].fillna(0)
+            df["gamma"] = df["gamma"].fillna(0)
+            df["theta"] = df["theta"].fillna(0)
+            df["vega"] = df["vega"].fillna(0)
+            df["rho"] = df["rho"].fillna(0)
+            
+            # Calculate volume and open interest metrics
+            total_volume = df["volume"].sum()
+            total_open_interest = df["open_interest"].sum()
+            
+            # Calculate put/call ratio
+            puts = df[df["option_type"] == "put"]
+            calls = df[df["option_type"] == "call"]
+            put_call_ratio = len(puts) / len(calls) if len(calls) > 0 else 0
+            
+            # Format contracts data
+            contracts = []
+            for idx, row in df.iterrows():
+                contract = {
+                    "symbol": idx,
+                    "strike_price": row["strike_price"],
+                    "expiration_date": row["expiration_date"].isoformat(),
+                    "option_type": row["option_type"],
+                    "moneyness": row["moneyness"],
+                    "days_to_expiry": row["days_to_expiry"],
+                    "volume": row["volume"],
+                    "open_interest": row["open_interest"],
+                    "greeks": {
+                        "delta": row["delta"],
+                        "gamma": row["gamma"],
+                        "theta": row["theta"],
+                        "vega": row["vega"],
+                        "rho": row["rho"]
+                    }
+                }
                 
-                return contracts, next_page_token
+                # Add latest quote if available
+                if idx in quotes:
+                    quote = quotes[idx]
+                    contract.update({
+                        "bid_price": quote.bid_price,
+                        "ask_price": quote.ask_price,
+                        "mid_price": (quote.bid_price + quote.ask_price) / 2,
+                        "spread": quote.ask_price - quote.bid_price
+                    })
+                
+                contracts.append(contract)
+            
+            return {
+                "contracts": contracts,
+                "metrics": {
+                    "total_volume": total_volume,
+                    "total_open_interest": total_open_interest,
+                    "put_call_ratio": put_call_ratio
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing options chain: {str(e)}")
+            return {
+                "contracts": [],
+                "metrics": {
+                    "total_volume": 0,
+                    "total_open_interest": 0,
+                    "put_call_ratio": 0
+                }
+            }
+
+    def format_for_rag(self, data: Dict[str, Any]) -> str:
+        """Format options data for RAG in a structured, vectorizable format."""
+        try:
+            sections = []
+            
+            # Get current timestamp
+            timestamp = datetime.now().isoformat()
+            
+            # Options Overview Section
+            overview = [
+                f"OPTIONS OVERVIEW:",
+                f"Symbol: {self.symbol}",
+                f"Timestamp: {timestamp}",
+                f"Status: {data.get('status', 'unknown')}"
+            ]
+            sections.append("\n".join(overview))
+
+            # Options Metrics Section
+            if 'options_data' in data and 'metrics' in data['options_data']:
+                metrics = ["OPTIONS METRICS:"]
+                m = data['options_data']['metrics']
+                metrics.extend([
+                    f"Total Volume: {m.get('total_volume', 0):,}",
+                    f"Total Open Interest: {m.get('total_open_interest', 0):,}",
+                    f"Put/Call Ratio: {m.get('put_call_ratio', 0):.2f}"
+                ])
+                sections.append("\n".join(metrics))
+
+            # Contracts Section
+            if 'options_data' in data and 'contracts' in data['options_data']:
+                contracts = ["OPTIONS CONTRACTS:"]
+                for contract in data['options_data']['contracts'][:5]:  # Show first 5 contracts
+                    contracts.extend([
+                        f"Contract: {contract.get('symbol', 'N/A')}",
+                        f"  Type: {contract.get('option_type', 'N/A')}",
+                        f"  Strike: ${contract.get('strike_price', 0):.2f}",
+                        f"  Expiry: {contract.get('expiration_date', 'N/A')}",
+                        f"  Moneyness: {contract.get('moneyness', 0):.2f}",
+                        f"  Days to Expiry: {contract.get('days_to_expiry', 0)}",
+                        f"  Volume: {contract.get('volume', 0):,}",
+                        f"  Open Interest: {contract.get('open_interest', 0):,}",
+                        f"  Greeks:",
+                        f"    Delta: {contract.get('greeks', {}).get('delta', 0):.4f}",
+                        f"    Gamma: {contract.get('greeks', {}).get('gamma', 0):.4f}",
+                        f"    Theta: {contract.get('greeks', {}).get('theta', 0):.4f}",
+                        f"    Vega: {contract.get('greeks', {}).get('vega', 0):.4f}",
+                        f"    Rho: {contract.get('greeks', {}).get('rho', 0):.4f}"
+                    ])
+                sections.append("\n".join(contracts))
+
+            return "\n\n".join(sections)
+            
+        except Exception as e:
+            logger.error(f"Error formatting options data for RAG: {str(e)}")
+            return f"Error formatting options data: {str(e)}"
 
 def is_market_open_now():
     now = datetime.utcnow()
