@@ -21,10 +21,11 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     gcc \
     g++ \
+    software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
 # Create necessary directories
-RUN mkdir -p /app/data/pdfs /app/model_cache && \
+RUN mkdir -p /app/data/pdfs /app/model_cache /app/data/raw /app/data/cache && \
     chmod -R 755 /app/data /app/model_cache
 
 # Copy requirements first to leverage Docker cache

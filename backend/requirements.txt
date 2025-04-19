@@ -14,4 +14,5 @@ redis==5.0.1
 requests==2.31.0
 sentence-transformers==2.5.1
 PyPDF2==3.0.1
-scikit-learn==1.4.0 
+scikit-learn==1.4.0
+tenacity>=8.2.0 
