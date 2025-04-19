@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import aiohttp
 import json
 import logging
+import asyncio
 
 load_dotenv()
 
@@ -12,12 +13,19 @@ logger = logging.getLogger(__name__)
 
 class MarketVectorStore:
     def __init__(self):
+        self.pc = None
+        self.index = None
+        self.index_name = os.getenv("PINECONE_INDEX_NAME", "robindocs")
+        self.embedding_model = "nomic-embed-text"
+        self._initialization_task = None
+
+    async def _initialize_pinecone(self):
+        """Initialize Pinecone connection in the background."""
         try:
             self.pc = Pinecone(
                 api_key=os.getenv("PINECONE_API_KEY"),
-                timeout=30  # Increased timeout for initialization
+                timeout=30
             )
-            self.index_name = os.getenv("PINECONE_INDEX_NAME", "robindocs")
             
             # Check if index exists
             if self.index_name not in self.pc.list_indexes().names():
@@ -26,16 +34,26 @@ class MarketVectorStore:
             else:
                 self.index = self.pc.Index(self.index_name)
                 logger.info(f"Successfully connected to pre-trained index {self.index_name}")
-            
-            self.embedding_model = "nomic-embed-text"
         except Exception as e:
-            logger.error(f"Error initializing MarketVectorStore: {e}")
+            logger.error(f"Error initializing Pinecone: {e}")
             self.index = None
-            # Don't raise the exception, allow degraded operation
+
+    async def _ensure_pinecone_initialized(self):
+        """Ensure Pinecone is initialized, start initialization if needed."""
+        if self.pc is None and self._initialization_task is None:
+            self._initialization_task = asyncio.create_task(self._initialize_pinecone())
+        if self._initialization_task is not None:
+            try:
+                await asyncio.wait_for(self._initialization_task, timeout=30)
+            except asyncio.TimeoutError:
+                logger.warning("Pinecone initialization timed out")
+            self._initialization_task = None
 
     async def search_similar_market_conditions(self, query: str, symbol: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """Search for similar market conditions in the vector store."""
         try:
+            await self._ensure_pinecone_initialized()
+            
             if not self.index:
                 logger.warning("Vector store not available, skipping similarity search")
                 return []

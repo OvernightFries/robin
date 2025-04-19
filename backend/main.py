@@ -113,7 +113,7 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
 # Initialize Redis and components after route registration
 redis_client = init_redis()
 
-# Initialize components as None
+# Initialize components
 chat_memory = None
 vectorizer = None
 knowledge_base = None
@@ -123,33 +123,28 @@ async def initialize_components():
     global chat_memory, vectorizer, knowledge_base
     
     try:
-        logger.info("Starting component initialization...")
-        
-        # Initialize chat memory (optional)
-        try:
-            chat_memory = ChatMemory(redis_client)
-            logger.info("Chat memory initialized")
-        except Exception as e:
-            logger.warning(f"Chat memory initialization skipped: {str(e)}")
-        
-        # Initialize vectorizer (optional)
-        try:
-            vectorizer = FinancialDataVectorizer()
-            logger.info("Vectorizer initialized")
-        except Exception as e:
-            logger.warning(f"Vectorizer initialization skipped: {str(e)}")
-        
-        # Initialize knowledge base (optional)
-        try:
-            knowledge_base = MarketVectorStore()
-            logger.info("Knowledge base initialized")
-        except Exception as e:
-            logger.warning(f"Knowledge base initialization skipped: {str(e)}")
-        
-        logger.info("Component initialization completed")
+        # Initialize Redis for chat memory
+        chat_memory = ChatMemory()
+        logger.info("Chat memory initialized")
     except Exception as e:
-        logger.error(f"Failed to initialize components: {str(e)}")
-        # Don't raise the exception, just log it
+        logger.error(f"Error initializing chat memory: {e}")
+        chat_memory = None
+
+    try:
+        # Initialize vectorizer (lazy Pinecone initialization)
+        vectorizer = FinancialDataVectorizer()
+        logger.info("Vectorizer initialized in lazy mode")
+    except Exception as e:
+        logger.error(f"Error initializing vectorizer: {e}")
+        vectorizer = None
+
+    try:
+        # Initialize knowledge base (lazy Pinecone initialization)
+        knowledge_base = MarketVectorStore()
+        logger.info("Knowledge base initialized in lazy mode")
+    except Exception as e:
+        logger.error(f"Error initializing knowledge base: {e}")
+        knowledge_base = None
 
 # Start component initialization in the background
 asyncio.create_task(initialize_components())
@@ -158,16 +153,25 @@ asyncio.create_task(initialize_components())
 async def health_check():
     """Health check endpoint."""
     try:
-        # Basic health check - just verify the server is running
         return {
             "status": "healthy",
-            "message": "Server is running"
+            "server": "running",
+            "components": {
+                "chat_memory": "initialized" if chat_memory else "not initialized",
+                "vectorizer": "initialized" if vectorizer else "not initialized",
+                "knowledge_base": "initialized" if knowledge_base else "not initialized"
+            }
         }
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
+        logger.error(f"Health check failed: {e}")
         return {
-            "status": "healthy",
-            "warning": str(e)
+            "status": "degraded",
+            "server": "running",
+            "components": {
+                "chat_memory": "error",
+                "vectorizer": "error",
+                "knowledge_base": "error"
+            }
         }
 
 class QueryRequest(BaseModel):
