@@ -35,7 +35,9 @@ class OptionsData:
         self.symbol = symbol.upper()
         self.api_key = api_key or API_KEY
         self.api_secret = api_secret or API_SECRET
-        self.base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets/v2")
+        self.base_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
+        self.options_url = os.getenv("ALPACA_OPTIONS_URL", "https://api.alpaca.markets/v2/options/contracts")
+        self.stream_url = os.getenv("ALPACA_STREAM_ENDPOINT", "wss://stream.data.alpaca.markets/v2/iex")
         self.headers = {
             "APCA-API-KEY-ID": self.api_key,
             "APCA-API-SECRET-KEY": self.api_secret,
@@ -112,7 +114,7 @@ class OptionsData:
         print(f"Fetching options for {self.symbol} from {start_date} to {end_date}")
         
         async with aiohttp.ClientSession(headers=self.headers) as session:
-            async with session.get(BASE_URL_V2, params=params) as response:
+            async with session.get(self.options_url, params=params) as response:
                 if response.status != 200:
                     print(f"Error: Status {response.status}")
                     return [], None
