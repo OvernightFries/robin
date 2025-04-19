@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import time
 import asyncio
 from alpaca_trade_api.rest import REST, TimeFrame
+import aiohttp
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -21,16 +22,20 @@ class MarketData:
         self.symbol = symbol.upper()
         self.api_key = api_key or os.getenv("ALPACA_API_KEY")
         self.api_secret = api_secret or os.getenv("ALPACA_SECRET_KEY")
-        self.base_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
+        
+        # URLs for different endpoints
+        self.trading_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
+        self.data_url = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets/v2")
+        self.options_url = os.getenv("ALPACA_OPTIONS_URL", "https://api.alpaca.markets/v2/options/contracts")
         
         if not self.api_key or not self.api_secret:
             raise ValueError("Alpaca API key and secret key must be provided")
             
-        # Initialize REST client
+        # Initialize REST client for trading operations
         self.api = REST(
             self.api_key,
             self.api_secret,
-            base_url=self.base_url,
+            base_url=self.trading_url,
             api_version='v2'
         )
         
@@ -41,33 +46,89 @@ class MarketData:
         
         for attempt in range(max_retries):
             try:
-                # Get current market data
-                last_bars = self.api.get_bars(self.symbol, timeframe='1D', limit=1).df
-                if last_bars.empty:
-                    raise ValueError(f"No data available for {self.symbol}")
-                
-                # Get historical data
-                historical_data = await self._get_historical_data()
-                
-                # Calculate technical indicators
-                indicators = self._calculate_technical_indicators(historical_data)
-                
-                return {
-                    "symbol": self.symbol,
-                    "current_price": last_bars['close'].iloc[-1],
-                    "volume": last_bars['volume'].iloc[-1],
-                    "timestamp": datetime.now().isoformat(),
-                    "historical_data": historical_data.to_dict('records'),
-                    "technical_indicators": indicators
+                # Get current market data using the data endpoint
+                headers = {
+                    "APCA-API-KEY-ID": self.api_key,
+                    "APCA-API-SECRET-KEY": self.api_secret
                 }
+                
+                # Get last 2 days of data to ensure we have the latest
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=2)
+                
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        # Use the exact URL format from Alpaca API
+                        url = f"{self.data_url}/stocks/{self.symbol}/bars"
+                        params = {
+                            "timeframe": "1D",
+                            "start": start_date.strftime("%Y-%m-%d"),
+                            "end": end_date.strftime("%Y-%m-%d")
+                        }
+                        
+                        logger.info(f"Requesting: {url} with params: {params}")
+                        
+                        async with session.get(
+                            url,
+                            params=params,
+                            headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=30)
+                        ) as response:
+                            if response.status != 200:
+                                logger.warning(f"Failed to fetch data: {await response.text()}")
+                                return self._get_default_response("API returned non-200 status")
+                                
+                            data = await response.json()
+                            if not data.get("bars"):
+                                logger.warning(f"No data available for {self.symbol}")
+                                return self._get_default_response("No market data available")
+                                
+                            # Convert to DataFrame
+                            df = pd.DataFrame(data["bars"])
+                            df["t"] = pd.to_datetime(df["t"])
+                            df.set_index("t", inplace=True)
+                            
+                            return {
+                                "symbol": self.symbol,
+                                "current_price": df["c"].iloc[-1] if not df.empty else None,
+                                "volume": df["v"].iloc[-1] if not df.empty else None,
+                                "timestamp": datetime.now().isoformat(),
+                                "status": "success",
+                                "message": "Data retrieved successfully"
+                            }
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Timeout while fetching data for {self.symbol}")
+                        return self._get_default_response("Request timed out")
                 
             except Exception as e:
                 if attempt == max_retries - 1:
                     logger.error(f"Error fetching market data after {max_retries} attempts: {str(e)}")
-                    raise
+                    return self._get_default_response(f"Failed after {max_retries} attempts")
                 logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
+
+    def _get_default_response(self, message: str) -> Dict[str, Any]:
+        """Return a default response when data is unavailable."""
+        return {
+            "symbol": self.symbol,
+            "current_price": None,
+            "volume": None,
+            "timestamp": datetime.now().isoformat(),
+            "status": "partial",
+            "message": message,
+            "historical_data": [],
+            "technical_indicators": {
+                "sma_20": None,
+                "sma_50": None,
+                "ema_20": None,
+                "rsi": None,
+                "macd": None,
+                "macd_signal": None,
+                "bollinger_upper": None,
+                "bollinger_lower": None
+            }
+        }
 
     async def _get_historical_data(self):
         """Fetch historical market data with retry logic"""

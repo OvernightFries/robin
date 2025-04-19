@@ -6,8 +6,10 @@ import msgpack
 import aiohttp
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("ALPACA_API_KEY")
 API_SECRET = os.getenv("ALPACA_SECRET_KEY")
@@ -33,34 +35,64 @@ BASE_URL_V2 = "https://api.alpaca.markets/v2/options/contracts"
 
 class OptionsData:
     def __init__(self, symbol: str, api_key: str = None, api_secret: str = None):
+        """Initialize the OptionsData instance."""
         self.symbol = symbol.upper()
-        self.api_key = api_key or API_KEY
-        self.api_secret = api_secret or API_SECRET
-        self.base_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
+        self.api_key = api_key or os.getenv("ALPACA_API_KEY")
+        self.api_secret = api_secret or os.getenv("ALPACA_SECRET_KEY")
+        
+        # URLs for different endpoints
+        self.trading_url = os.getenv("ALPACA_BASE_URL", "https://api.alpaca.markets/v2")
+        self.data_url = os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets/v2")
         self.options_url = os.getenv("ALPACA_OPTIONS_URL", "https://api.alpaca.markets/v2/options/contracts")
         self.stream_url = os.getenv("ALPACA_STREAM_ENDPOINT", "wss://stream.data.alpaca.markets/v2/iex")
+        
         self.headers = {
             "APCA-API-KEY-ID": self.api_key,
             "APCA-API-SECRET-KEY": self.api_secret,
             "Content-Type": "application/json"
         }
-
+        
     async def get_options_data(self):
-        """Fetch all available options data for the symbol"""
-        try:
-            contracts = await self._fetch_all_contracts()
-            return {
-                "symbol": self.symbol,
-                "contracts": contracts,
-                "timestamp": datetime.now().isoformat()
-            }
-        except Exception as e:
-            print(f"Error fetching options data: {str(e)}")
-            return {
-                "symbol": self.symbol,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
+        """Fetch options data with retry logic"""
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    try:
+                        # Use the options URL for fetching contracts
+                        url = f"{self.options_url}?underlying_symbol={self.symbol}"
+                        
+                        async with session.get(
+                            url,
+                            headers=self.headers,
+                            timeout=aiohttp.ClientTimeout(total=30)
+                        ) as response:
+                            if response.status != 200:
+                                logger.warning(f"Failed to fetch options data: {await response.text()}")
+                                return {"status": "error", "message": "Failed to fetch options data"}
+                            
+                            data = await response.json()
+                            return {
+                                "status": "success",
+                                "symbol": self.symbol,
+                                "contracts": data,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Timeout while fetching options data for {self.symbol}")
+                        if attempt == max_retries - 1:
+                            return {"status": "error", "message": "Request timed out"}
+                        
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Error fetching options data after {max_retries} attempts: {str(e)}")
+                    return {"status": "error", "message": str(e)}
+                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
 
     async def _fetch_all_contracts(self):
         """Fetch all option contracts for a given symbol with automatic pagination"""

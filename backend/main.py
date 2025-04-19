@@ -81,13 +81,15 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
         market_data = MarketData(request.symbol)
         market_context = await market_data.get_market_data()
         
-        # Get options data
-        options_data = OptionsData(request.symbol)
-        options_context = await options_data.get_options_data()
+        # Get options data (with error handling)
+        try:
+            options_data = OptionsData(request.symbol)
+            options_context = await options_data.get_options_data()
+        except Exception as e:
+            logger.warning(f"Failed to fetch options data: {str(e)}")
+            options_context = {"status": "unavailable", "message": "Options data temporarily unavailable"}
         
-        # Vectorize the data
-        await vectorizer.process_ticker_data(request.symbol)
-        
+        # Return response even if some data is missing
         response = JSONResponse(
             content={
                 "status": "success",
@@ -104,10 +106,16 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error initializing ticker {request.symbol}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(e),
-            headers={"Access-Control-Allow-Origin": "https://robin-khaki.vercel.app"}
+        # Return a partial response instead of an error
+        return JSONResponse(
+            content={
+                "status": "partial",
+                "message": f"Partial data available for {request.symbol}",
+                "market_context": {"status": "unavailable", "message": str(e)},
+                "options_context": {"status": "unavailable", "message": "Options data not fetched"},
+                "request_id": request_id
+            },
+            status_code=200  # Return 200 even with partial data
         )
 
 # Initialize Redis and components after route registration
