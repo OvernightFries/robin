@@ -26,15 +26,12 @@ class MarketData:
         if not self.api_key or not self.api_secret:
             raise ValueError("Alpaca API key and secret key must be provided")
             
-        # Initialize REST client with timeout and retry settings
+        # Initialize REST client
         self.api = REST(
             self.api_key,
             self.api_secret,
             base_url=self.base_url,
-            api_version='v2',
-            timeout=30,  # 30 second timeout
-            retries=3,   # 3 retry attempts
-            retry_delay=5  # 5 second delay between retries
+            api_version='v2'
         )
         
     async def get_market_data(self):
@@ -66,9 +63,9 @@ class MarketData:
                 
             except Exception as e:
                 if attempt == max_retries - 1:
-                    print(f"Error fetching market data after {max_retries} attempts: {str(e)}")
+                    logger.error(f"Error fetching market data after {max_retries} attempts: {str(e)}")
                     raise
-                print(f"Attempt {attempt + 1} failed: {str(e)}")
+                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
 
