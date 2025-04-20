@@ -154,22 +154,15 @@ async def initialize_components():
     global chat_memory, vectorizer, knowledge_base
     
     # Initialize Redis for chat memory
-    chat_memory = await initialize_with_retry(
-        lambda: ChatMemory(),
-        "chat memory"
-    )
-
+    chat_memory = ChatMemory(redis_client=init_redis())
+    
     # Initialize vectorizer
-    vectorizer = await initialize_with_retry(
-        lambda: FinancialDataVectorizer(),
-        "vectorizer"
-    )
-
+    vectorizer = FinancialDataVectorizer()
+    await vectorizer.ensure_index_exists()
+    
     # Initialize knowledge base
-    knowledge_base = await initialize_with_retry(
-        lambda: MarketVectorStore(),
-        "knowledge base"
-    )
+    knowledge_base = MarketVectorStore()
+    await knowledge_base._ensure_pinecone_initialized()
 
 # Start component initialization in the background
 asyncio.create_task(initialize_components())
