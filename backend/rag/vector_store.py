@@ -27,13 +27,21 @@ class MarketVectorStore:
                 timeout=30
             )
             
-            # Check if index exists
-            if self.index_name not in self.pc.list_indexes().names():
-                logger.warning(f"Pre-trained index {self.index_name} not found. Some features may be limited.")
+            # Check if index exists with timeout
+            try:
+                indexes = await asyncio.wait_for(
+                    asyncio.to_thread(self.pc.list_indexes),
+                    timeout=10
+                )
+                if self.index_name not in indexes.names():
+                    logger.warning(f"Pre-trained index {self.index_name} not found. Some features may be limited.")
+                    self.index = None
+                else:
+                    self.index = self.pc.Index(self.index_name)
+                    logger.info(f"Successfully connected to pre-trained index {self.index_name}")
+            except asyncio.TimeoutError:
+                logger.warning("Pinecone index listing timed out, continuing with basic setup")
                 self.index = None
-            else:
-                self.index = self.pc.Index(self.index_name)
-                logger.info(f"Successfully connected to pre-trained index {self.index_name}")
         except Exception as e:
             logger.error(f"Error initializing Pinecone: {e}")
             self.index = None
@@ -46,7 +54,7 @@ class MarketVectorStore:
             try:
                 await asyncio.wait_for(self._initialization_task, timeout=30)
             except asyncio.TimeoutError:
-                logger.warning("Pinecone initialization timed out")
+                logger.warning("Pinecone initialization timed out, continuing with basic setup")
             self._initialization_task = None
 
     async def search_similar_market_conditions(self, query: str, symbol: str, top_k: int = 5) -> List[Dict[str, Any]]:

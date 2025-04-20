@@ -140,8 +140,9 @@ async def initialize_with_retry(initializer, component_name):
         except Exception as e:
             logger.error(f"Error initializing {component_name} (attempt {attempt + 1}): {e}")
             if attempt < MAX_RETRIES - 1:
-                logger.info(f"Retrying in {RETRY_DELAY} seconds...")
-                await asyncio.sleep(RETRY_DELAY)
+                retry_delay = RETRY_DELAY * (attempt + 1)  # Exponential backoff
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
             else:
                 logger.error(f"Failed to initialize {component_name} after {MAX_RETRIES} attempts")
                 return None
@@ -160,16 +161,22 @@ async def initialize_components():
     async def init_chat_memory():
         return ChatMemory(redis_client=init_redis())
     
-    # Initialize vectorizer
+    # Initialize vectorizer with timeout handling
     async def init_vectorizer():
         vec = FinancialDataVectorizer()
-        await vec.ensure_index_exists()
+        try:
+            await asyncio.wait_for(vec.ensure_index_exists(), timeout=30)
+        except asyncio.TimeoutError:
+            logger.warning("Vectorizer initialization timed out, continuing with basic setup")
         return vec
     
-    # Initialize knowledge base
+    # Initialize knowledge base with timeout handling
     async def init_knowledge_base():
         kb = MarketVectorStore()
-        await kb._ensure_pinecone_initialized()
+        try:
+            await asyncio.wait_for(kb._ensure_pinecone_initialized(), timeout=30)
+        except asyncio.TimeoutError:
+            logger.warning("Knowledge base initialization timed out, continuing with basic setup")
         return kb
     
     # Initialize components with retry
@@ -177,9 +184,16 @@ async def initialize_components():
     vectorizer_task = initialize_with_retry(init_vectorizer, "vectorizer")
     knowledge_base_task = initialize_with_retry(init_knowledge_base, "knowledge base")
     
+    # Wait for all initializations to complete
     chat_memory = await chat_memory_task
     vectorizer = await vectorizer_task
     knowledge_base = await knowledge_base_task
+    
+    # Log final status
+    logger.info("Component initialization complete:")
+    logger.info(f"Chat Memory: {'Initialized' if chat_memory else 'Failed'}")
+    logger.info(f"Vectorizer: {'Initialized' if vectorizer else 'Failed'}")
+    logger.info(f"Knowledge Base: {'Initialized' if knowledge_base else 'Failed'}")
 
 # Start component initialization in the background
 @app.on_event("startup")

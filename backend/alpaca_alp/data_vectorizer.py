@@ -39,19 +39,33 @@ class FinancialDataVectorizer:
         """Ensure the real-time index exists, create if it doesn't."""
         try:
             if not self.index:
-                if self.index_name not in self.pc.list_indexes().names():
-                    logger.info(f"Creating real-time index {self.index_name}")
-                    self.pc.create_index(
-                        name=self.index_name,
-                        dimension=384,  # Dimension for MiniLM model
-                        metric='cosine',
-                        spec=ServerlessSpec(
-                            cloud='aws',
-                            region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
-                        )
+                try:
+                    # List indexes with timeout
+                    indexes = await asyncio.wait_for(
+                        asyncio.to_thread(self.pc.list_indexes),
+                        timeout=10
                     )
-                self.index = self.pc.Index(self.index_name)
-                logger.info(f"Real-time index {self.index_name} is ready")
+                    if self.index_name not in indexes.names():
+                        logger.info(f"Creating real-time index {self.index_name}")
+                        # Create index with timeout
+                        await asyncio.wait_for(
+                            asyncio.to_thread(
+                                self.pc.create_index,
+                                name=self.index_name,
+                                dimension=384,  # Dimension for MiniLM model
+                                metric='cosine',
+                                spec=ServerlessSpec(
+                                    cloud='aws',
+                                    region=os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
+                                )
+                            ),
+                            timeout=30
+                        )
+                    self.index = self.pc.Index(self.index_name)
+                    logger.info(f"Real-time index {self.index_name} is ready")
+                except asyncio.TimeoutError:
+                    logger.warning(f"Pinecone index operations timed out for {self.index_name}")
+                    self.index = None
         except Exception as e:
             logger.error(f"Error ensuring index exists: {e}")
             raise
