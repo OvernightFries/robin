@@ -125,9 +125,6 @@ async def initialize_ticker(request: InitializeTickerRequest) -> Dict[str, Any]:
             status_code=200
         )
 
-# Initialize Redis and components after route registration
-redis_client = init_redis()
-
 # Initialize components with retry logic
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds
@@ -149,23 +146,45 @@ async def initialize_with_retry(initializer, component_name):
                 logger.error(f"Failed to initialize {component_name} after {MAX_RETRIES} attempts")
                 return None
 
+# Initialize Redis and components after route registration
+redis_client = init_redis()
+chat_memory = None
+vectorizer = None
+knowledge_base = None
+
 async def initialize_components():
     """Initialize components in the background with retry logic."""
     global chat_memory, vectorizer, knowledge_base
     
     # Initialize Redis for chat memory
-    chat_memory = ChatMemory(redis_client=init_redis())
+    async def init_chat_memory():
+        return ChatMemory(redis_client=init_redis())
     
     # Initialize vectorizer
-    vectorizer = FinancialDataVectorizer()
-    await vectorizer.ensure_index_exists()
+    async def init_vectorizer():
+        vec = FinancialDataVectorizer()
+        await vec.ensure_index_exists()
+        return vec
     
     # Initialize knowledge base
-    knowledge_base = MarketVectorStore()
-    await knowledge_base._ensure_pinecone_initialized()
+    async def init_knowledge_base():
+        kb = MarketVectorStore()
+        await kb._ensure_pinecone_initialized()
+        return kb
+    
+    # Initialize components with retry
+    chat_memory_task = initialize_with_retry(init_chat_memory, "chat memory")
+    vectorizer_task = initialize_with_retry(init_vectorizer, "vectorizer")
+    knowledge_base_task = initialize_with_retry(init_knowledge_base, "knowledge base")
+    
+    chat_memory = await chat_memory_task
+    vectorizer = await vectorizer_task
+    knowledge_base = await knowledge_base_task
 
 # Start component initialization in the background
-asyncio.create_task(initialize_components())
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(initialize_components())
 
 @app.get("/health")
 async def health_check():
